@@ -617,7 +617,7 @@ def mostrar_ingredientes():
     # Lista de ingredientes existentes
     st.markdown("### 📋 Lista de Ingredientes")
     
-if ingredientes:
+  if ingredientes:
         datos_tabla = []
         for ing in sorted(ingredientes, key=lambda x: x['nombre']):
             datos_tabla.append({
@@ -647,7 +647,7 @@ if ingredientes:
         
         with col3:
             st.metric("Ingredientes Activos", len(ingredientes))
-    else:
+else:
         st.info("📝 No hay ingredientes registrados. Agrega el primero usando el formulario arriba.")
 
 def mostrar_recetas():
