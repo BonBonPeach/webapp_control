@@ -807,8 +807,8 @@ def mostrar_precios():
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 def leer_precio_producto(producto):
-    """Leer precio de un producto específico"""
-    df = cargar_csv_desde_r2('precios')  # O el archivo correcto
+    """Leer precio de un producto específico desde CostoPorProducto.csv"""
+    df = cargar_csv_desde_r2('precios')  # Ahora apunta a CostoPorProducto.csv
     if not df.empty and 'Producto' in df.columns:
         fila = df[df['Producto'] == producto]
         if not fila.empty:
@@ -820,15 +820,14 @@ def leer_precio_producto(producto):
     return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
 
 def guardar_precio_producto(producto, precio_venta, costo_produccion, margen, margen_porcentual):
-    """Guardar precio de un producto"""
+    """Guardar precio de un producto en CostoPorProducto.csv"""
     try:
+        # Cargar datos existentes
+        df = cargar_csv_desde_r2('precios')
         datos = []
-        if os.path.exists(ruta_desglose_precios):
-            try:
-                df_existente = pd.read_csv(ruta_desglose_precios, encoding='latin-1')
-                datos = df_existente.to_dict('records')
-            except:
-                datos = []
+        
+        if not df.empty:
+            datos = df.to_dict('records')
         
         # Actualizar o agregar producto
         producto_encontrado = False
@@ -850,10 +849,13 @@ def guardar_precio_producto(producto, precio_venta, costo_produccion, margen, ma
                 'Margen Bruto (%)': f"{margen_porcentual:.2f}"
             })
         
-        df = pd.DataFrame(datos)
-        df.to_csv(ruta_desglose_precios, index=False, encoding='latin-1')
+        # Guardar de vuelta en R2
+        df_nuevo = pd.DataFrame(datos)
+        return guardar_csv_en_r2(df_nuevo, 'precios')
+        
     except Exception as e:
         st.error(f"Error guardando precio: {e}")
+        return False
 
 def mostrar_ventas():
     st.markdown('<div class="section-header">🛒 Gestión de Ventas</div>', unsafe_allow_html=True)
