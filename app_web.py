@@ -197,8 +197,12 @@ ruta_inventario = os.path.join(BASE_DIR, "Inventario.csv")
 # --- Funciones de gestión de datos ---
 @st.cache_data
 def leer_ingredientes_base(_ruta_archivo):
-    return cargar_csv_desde_r2('ingredientes')
-
+    df = cargar_csv_desde_r2('ingredientes')
+    if df.empty:
+        return []
+    # CONVERTIR DataFrame a lista de diccionarios
+    return df.to_dict('records')
+    
 def guardar_ingredientes_base(ingredientes_data):
     df = pd.DataFrame(ingredientes_data)
     success = guardar_csv_en_r2(df, 'ingredientes')
@@ -613,7 +617,7 @@ def mostrar_ingredientes():
     # Lista de ingredientes existentes
     st.markdown("### 📋 Lista de Ingredientes")
     
-if not ingredientes.empty:
+if ingredientes:
         datos_tabla = []
         for ing in sorted(ingredientes, key=lambda x: x['nombre']):
             datos_tabla.append({
