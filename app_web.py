@@ -205,13 +205,37 @@ ruta_inventario = os.path.join(BASE_DIR, "Inventario.csv")
 
 # --- Funciones de gestión de datos ---
 @st.cache_data
+@st.cache_data
 def leer_ingredientes_base(_ruta_archivo):
     df = cargar_csv_desde_r2('ingredientes')
     if df.empty:
         return []
-    # CONVERTIR DataFrame a lista de diccionarios
-    return df.to_dict('records')
     
+    # Mapear columnas reales a nombres esperados
+    datos = []
+    for _, row in df.iterrows():
+        # Usar los nombres reales de tu CSV
+        nombre = row.get('Ingrediente', '')
+        proveedor = row.get('Proveedor', '')
+        unidad_compra = row.get('Unidad de Compra', '')
+        costo_compra = clean_and_convert_float(row.get('Costo de Compra', 0))
+        cantidad_compra = clean_and_convert_float(row.get('Cantidad por Unidad de Compra', 1))
+        unidad_receta = row.get('Unidad Receta', '')
+        
+        if nombre and pd.notna(nombre):
+            costo_receta = costo_compra / cantidad_compra if cantidad_compra > 0 else 0
+            datos.append({
+                'nombre': str(nombre),
+                'proveedor': str(proveedor),
+                'costo_compra': costo_compra,
+                'cantidad_compra': cantidad_compra,
+                'unidad_compra': unidad_compra,
+                'unidad_receta': unidad_receta,
+                'costo_receta': costo_receta,
+                'nombre_normalizado': normalizar_texto(nombre)
+            })
+    
+    return datos
 def guardar_ingredientes_base(ingredientes_data):
     df = pd.DataFrame(ingredientes_data)
     success = guardar_csv_en_r2(df, 'ingredientes')
@@ -219,7 +243,7 @@ def guardar_ingredientes_base(ingredientes_data):
         st.cache_data.clear()
     return success
 def leer_inventario():
-    """Leer inventario desde R2 - Versión corregida"""
+    """Leer inventario desde R2"""
     df = cargar_csv_desde_r2('inventario')
     inventario = {}
     
@@ -227,26 +251,11 @@ def leer_inventario():
         for _, row in df.iterrows():
             nombre = row.get('Ingrediente', '')
             if nombre and pd.notna(nombre):
-                try:
-                    # Manejar valores que podrían ser strings o números
-                    stock_actual = row.get('Stock Actual', 0.0)
-                    stock_min = row.get('Stock Mínimo', 0.0)
-                    stock_max = row.get('Stock Máximo', 0.0)
-                    
-                    # Convertir a float de forma segura
-                    inventario[str(nombre)] = {
-                        'stock_actual': clean_and_convert_float(stock_actual),
-                        'min': clean_and_convert_float(stock_min),
-                        'max': clean_and_convert_float(stock_max)
-                    }
-                except Exception as e:
-                    print(f"Error procesando inventario para {nombre}: {e}")
-                    # Usar valores por defecto si hay error
-                    inventario[str(nombre)] = {
-                        'stock_actual': 0.0,
-                        'min': 0.0,
-                        'max': 0.0
-                    }
+                inventario[str(nombre)] = {
+                    'stock_actual': clean_and_convert_float(row.get('Stock Actual', 0.0)),
+                    'min': clean_and_convert_float(row.get('Stock Mínimo', 0.0)),
+                    'max': clean_and_convert_float(row.get('Stock Máximo', 0.0))
+                }
     
     return inventario
 
@@ -312,14 +321,20 @@ def leer_ventas(fecha_inicio=None, fecha_fin=None):
     # Convertir a formato de tus funciones existentes
     ventas = []
     for _, row in df.iterrows():
-        venta = {}
-        for col in df.columns:
-            value = row[col]
-            # Convertir números
-            if isinstance(value, (int, float)) or (isinstance(value, str) and value.replace('.', '').isdigit()):
-                venta[col] = float(value)
-            else:
-                venta[col] = value
+        venta = {
+            'Fecha': row.get('Fecha', ''),
+            'Producto': row.get('Producto', ''),
+            'Cantidad': clean_and_convert_float(row.get('Cantidad', 0)),
+            'Precio Unitario': clean_and_convert_float(row.get('Precio Unitario', 0)),
+            'Total Venta Bruto': clean_and_convert_float(row.get('Total Venta Bruto', 0)),
+            'Descuento (%)': clean_and_convert_float(row.get('Descuento (%)', 0)),
+            'Descuento ($)': clean_and_convert_float(row.get('Descuento ($)', 0)),
+            'Costo Total': clean_and_convert_float(row.get('Costo Total', 0)),
+            'Ganancia Bruta': clean_and_convert_float(row.get('Ganancia Bruta', 0)),
+            'Comision ($)': clean_and_convert_float(row.get('Comision ($)', 0)),
+            'Ganancia Neta': clean_and_convert_float(row.get('Ganancia Neta', 0)),
+            'Forma Pago': row.get('Forma Pago', '')
+        }
         ventas.append(venta)
     
     # Aplicar filtros de fecha si se proporcionan
@@ -793,19 +808,15 @@ def mostrar_precios():
 
 def leer_precio_producto(producto):
     """Leer precio de un producto específico"""
-    if os.path.exists(ruta_desglose_precios):
-        try:
-            df = pd.read_csv(ruta_desglose_precios, encoding='latin-1')
-            if 'Producto' in df.columns:
-                fila = df[df['Producto'] == producto]
-                if not fila.empty:
-                    return {
-                        'precio_venta': clean_and_convert_float(fila.iloc[0].get('Precio Venta', 0)),
-                        'margen_bruto': clean_and_convert_float(fila.iloc[0].get('Margen Bruto', 0)),
-                        'margen_porcentual': clean_and_convert_float(fila.iloc[0].get('Margen Bruto (%)', 0))
-                    }
-        except Exception as e:
-            st.error(f"Error leyendo precios: {e}")
+    df = cargar_csv_desde_r2('precios')  # O el archivo correcto
+    if not df.empty and 'Producto' in df.columns:
+        fila = df[df['Producto'] == producto]
+        if not fila.empty:
+            return {
+                'precio_venta': clean_and_convert_float(fila.iloc[0].get('Precio Venta', 0)),
+                'margen_bruto': clean_and_convert_float(fila.iloc[0].get('Margen Bruto', 0)),
+                'margen_porcentual': clean_and_convert_float(fila.iloc[0].get('Margen Bruto (%)', 0))
+            }
     return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
 
 def guardar_precio_producto(producto, precio_venta, costo_produccion, margen, margen_porcentual):
@@ -1207,10 +1218,13 @@ def mostrar_inventario():
     inventario = leer_inventario()
     ingredientes = leer_ingredientes_base(ruta_ingredientes)
     
-    # Agregar ingredientes que no están en inventario
+    # CORREGIR: Agregar ingredientes que no están en inventario
     for ing in ingredientes:
-        if ing['nombre'] not in inventario:
-            inventario[ing['nombre']] = {'stock_actual': 0.0, 'min': 0.0, 'max': 0.0}
+        nombre_ing = ing.get('nombre')
+        if nombre_ing and nombre_ing not in inventario:
+            inventario[nombre_ing] = {'stock_actual': 0.0, 'min': 0.0, 'max': 0.0}
+    
+    # ... resto del código igual
     
     # Métricas de inventario
     col1, col2, col3, col4 = st.columns(4)
