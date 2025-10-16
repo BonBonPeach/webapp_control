@@ -180,11 +180,20 @@ def normalizar_texto(texto):
     return re.sub(r'[^a-z0-9\s]', '', texto)
 
 def clean_and_convert_float(value_str, default=0.0):
-    if isinstance(value_str, (int, float)): return float(value_str)
-    if not isinstance(value_str, str): return default
-    cleaned = value_str.strip().replace('$', '').replace(',', '').replace('%', '')
-    try: return float(cleaned)
-    except (ValueError, TypeError): return default
+    if isinstance(value_str, (int, float)):
+        return float(value_str)
+    if not isinstance(value_str, str):
+        return default
+    
+    try:
+        # Limpiar el string
+        cleaned = value_str.strip().replace('$', '').replace(',', '').replace('%', '').replace(' ', '')
+        # Si está vacío después de limpiar, usar default
+        if not cleaned:
+            return default
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return default
 
 # --- Rutas de archivos ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -209,9 +218,8 @@ def guardar_ingredientes_base(ingredientes_data):
     if success:
         st.cache_data.clear()
     return success
-
 def leer_inventario():
-    """Leer inventario desde R2"""
+    """Leer inventario desde R2 - Versión corregida"""
     df = cargar_csv_desde_r2('inventario')
     inventario = {}
     
@@ -219,11 +227,26 @@ def leer_inventario():
         for _, row in df.iterrows():
             nombre = row.get('Ingrediente', '')
             if nombre and pd.notna(nombre):
-                inventario[str(nombre)] = {
-                    'stock_actual': float(row.get('Stock Actual', 0.0)),
-                    'min': float(row.get('Stock Mínimo', 0.0)),
-                    'max': float(row.get('Stock Máximo', 0.0))
-                }
+                try:
+                    # Manejar valores que podrían ser strings o números
+                    stock_actual = row.get('Stock Actual', 0.0)
+                    stock_min = row.get('Stock Mínimo', 0.0)
+                    stock_max = row.get('Stock Máximo', 0.0)
+                    
+                    # Convertir a float de forma segura
+                    inventario[str(nombre)] = {
+                        'stock_actual': clean_and_convert_float(stock_actual),
+                        'min': clean_and_convert_float(stock_min),
+                        'max': clean_and_convert_float(stock_max)
+                    }
+                except Exception as e:
+                    print(f"Error procesando inventario para {nombre}: {e}")
+                    # Usar valores por defecto si hay error
+                    inventario[str(nombre)] = {
+                        'stock_actual': 0.0,
+                        'min': 0.0,
+                        'max': 0.0
+                    }
     
     return inventario
 
@@ -233,16 +256,15 @@ def guardar_inventario(inventario_data):
         if nombre and nombre.strip():
             datos.append({
                 'Ingrediente': str(nombre),
-                'Stock Actual': float(info.get('stock_actual', 0.0)),
-                'Stock Mínimo': float(info.get('min', 0.0)),
-                'Stock Máximo': float(info.get('max', 0.0))
+                'Stock Actual': info.get('stock_actual', 0.0),
+                'Stock Mínimo': info.get('min', 0.0),
+                'Stock Máximo': info.get('max', 0.0)
             })
     
     df = pd.DataFrame(datos)
     return guardar_csv_en_r2(df, 'inventario')
-
+    
 @st.cache_data
-
 def leer_recetas():
     recetas = {}
     ingredientes = leer_ingredientes_base(ruta_ingredientes)
