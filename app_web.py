@@ -807,17 +807,39 @@ def mostrar_precios():
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 def leer_precio_producto(producto):
-    """Leer precio de un producto específico desde CostoPorProducto.csv"""
-    df = cargar_csv_desde_r2('precios')  # Ahora apunta a CostoPorProducto.csv
-    if not df.empty and 'Producto' in df.columns:
-        fila = df[df['Producto'] == producto]
-        if not fila.empty:
+    """Leer precio de un producto específico - Versión mejorada"""
+    try:
+        df = cargar_csv_desde_r2('precios')
+        
+        if df.empty:
+            print(f"❌ Archivo de precios vacío o no encontrado")
+            return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
+        
+        if 'Producto' not in df.columns:
+            print(f"❌ No hay columna 'Producto' en precios. Columnas: {list(df.columns)}")
+            return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
+        
+        # Buscar el producto (case insensitive)
+        producto_normalizado = normalizar_texto(producto)
+        productos_en_df = df['Producto'].astype(str).apply(normalizar_texto)
+        
+        match_idx = productos_en_df[productos_en_df == producto_normalized].index
+        
+        if len(match_idx) > 0:
+            fila = df.iloc[match_idx[0]]
+            print(f"✅ Producto '{producto}' encontrado en precios")
             return {
-                'precio_venta': clean_and_convert_float(fila.iloc[0].get('Precio Venta', 0)),
-                'margen_bruto': clean_and_convert_float(fila.iloc[0].get('Margen Bruto', 0)),
-                'margen_porcentual': clean_and_convert_float(fila.iloc[0].get('Margen Bruto (%)', 0))
+                'precio_venta': clean_and_convert_float(fila.get('Precio Venta', 0)),
+                'margen_bruto': clean_and_convert_float(fila.get('Margen Bruto', 0)),
+                'margen_porcentual': clean_and_convert_float(fila.get('Margen Bruto (%)', 0))
             }
-    return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
+        else:
+            print(f"❌ Producto '{producto}' no encontrado en precios. Productos disponibles: {df['Producto'].tolist()}")
+            return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
+            
+    except Exception as e:
+        print(f"❌ Error en leer_precio_producto: {e}")
+        return {'precio_venta': 0, 'margen_bruto': 0, 'margen_porcentual': 0}
 
 def guardar_precio_producto(producto, precio_venta, costo_produccion, margen, margen_porcentual):
     """Guardar precio de un producto en CostoPorProducto.csv"""
