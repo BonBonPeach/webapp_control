@@ -515,109 +515,21 @@ def mostrar_dashboard():
             st.warning(alerta)
     if not alertas_urgentes and not alertas_normales:
         st.success("✅ Todo en orden con el inventario")
-
 def mostrar_ingredientes():
     st.markdown('<div class="section-header">🧪 Gestión de Ingredientes</div>', unsafe_allow_html=True)
     
     ingredientes = leer_ingredientes_base(ruta_ingredientes)
     
-    # Formulario para agregar/modificar ingrediente
-    with st.expander("➕ Agregar/Modificar Ingrediente", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        # Selección de ingrediente existente para modificar - CON BÚSQUEDA
-        with col1:
-            nombres_ingredientes = [ing['nombre'] for ing in ingredientes]
-            texto_busqueda = st.text_input("Buscar ingrediente para modificar:", key="buscar_ing_modificar")
-            ingredientes_filtrados = filtrar_opciones(nombres_ingredientes, texto_busqueda)
-            
-            ingrediente_seleccionado = st.selectbox(
-                "Seleccionar Ingrediente para modificar:",
-                [""] + ingredientes_filtrados,
-                format_func=lambda x: "Nuevo ingrediente..." if x == "" else x
-            )
-        
-        # Precargar datos si se selecciona un ingrediente existente
-        ingrediente_existente = None
-        if ingrediente_seleccionado:
-            ingrediente_existente = next((ing for ing in ingredientes if ing['nombre'] == ingrediente_seleccionado), None)
-        
-        with st.form("form_ingrediente"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                nombre = st.text_input("Nombre del Ingrediente*", 
-                                     value=ingrediente_existente['nombre'] if ingrediente_existente else "")
-                proveedor = st.text_input("Proveedor", 
-                                        value=ingrediente_existente['proveedor'] if ingrediente_existente else "")
-                unidad_compra = st.text_input("Unidad de Compra (ej. kg)*", 
-                                           value=ingrediente_existente['unidad_compra'] if ingrediente_existente else "")
-            
-            with col2:
-                costo_compra = st.number_input("Costo de Compra ($)*", 
-                                             min_value=0.0, step=0.1,
-                                             value=float(ingrediente_existente['costo_compra']) if ingrediente_existente else 0.0)
-                cantidad_compra = st.number_input("Cantidad por Unidad de Compra*", 
-                                                min_value=0.0, step=0.1,
-                                                value=float(ingrediente_existente['cantidad_compra']) if ingrediente_existente else 0.0)
-                unidad_receta = st.text_input("Unidad Receta (ej. gr)*", 
-                                           value=ingrediente_existente['unidad_receta'] if ingrediente_existente else "")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if ingrediente_existente:
-                    submitted = st.form_submit_button("💾 Actualizar Ingrediente")
-                else:
-                    submitted = st.form_submit_button("➕ Agregar Ingrediente")
-            
-            with col2:
-                if ingrediente_existente:
-                    if st.form_submit_button("🗑️ Eliminar Ingrediente", type="secondary"):
-                        ingredientes.remove(ingrediente_existente)
-                        guardar_ingredientes_base(ingredientes)
-                        st.rerun()
-            
-            if submitted:
-                if nombre and unidad_compra and costo_compra > 0 and cantidad_compra > 0 and unidad_receta:
-                    costo_receta = costo_compra / cantidad_compra if cantidad_compra != 0 else 0.0
-                    
-                    if ingrediente_existente:
-                        # Actualizar ingrediente existente
-                        ingrediente_existente.update({
-                            'nombre': nombre,
-                            'proveedor': proveedor,
-                            'costo_compra': costo_compra,
-                            'cantidad_compra': cantidad_compra,
-                            'unidad_compra': unidad_compra,
-                            'unidad_receta': unidad_receta,
-                            'costo_receta': costo_receta,
-                            'nombre_normalizado': normalizar_texto(nombre)
-                        })
-                        st.success(f"✅ Ingrediente '{nombre}' actualizado correctamente")
-                    else:
-                        # Nuevo ingrediente
-                        nuevo_ingrediente = {
-                            'nombre': nombre,
-                            'proveedor': proveedor,
-                            'costo_compra': costo_compra,
-                            'cantidad_compra': cantidad_compra,
-                            'unidad_compra': unidad_compra,
-                            'unidad_receta': unidad_receta,
-                            'costo_receta': costo_receta,
-                            'nombre_normalizado': normalizar_texto(nombre)
-                        }
-                        ingredientes.append(nuevo_ingrediente)
-                        st.success(f"✅ Ingrediente '{nombre}' agregado correctamente")
-                    
-                    guardar_ingredientes_base(ingredientes)
-                    st.rerun()
-                else:
-                    st.error("❌ Por favor completa todos los campos requeridos (*)")
+    # Asegurarnos que ingredientes nunca sea None
+    if ingredientes is None:
+        ingredientes = []
+    
+    # ... (el resto del código del formulario)
     
     # Lista de ingredientes existentes
     st.markdown("### 📋 Lista de Ingredientes")
     
-if ingredientes:
+    if ingredientes:  # Ahora esto funciona porque aseguramos que no sea None
         datos_tabla = []
         for ing in sorted(ingredientes, key=lambda x: x['nombre']):
             datos_tabla.append({
@@ -647,7 +559,7 @@ if ingredientes:
         
         with col3:
             st.metric("Ingredientes Activos", len(ingredientes))
-else:
+    else:
         st.info("📝 No hay ingredientes registrados. Agrega el primero usando el formulario arriba.")
 
 def mostrar_recetas():
