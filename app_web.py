@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN DE CLOUDFLARE R2 ---
 # REEMPLAZA ESTA URL CON LA DE TU WORKER REAL
-WORKER_URL = "https://tu-worker.tu-subdominio.workers.dev"
+WORKER_URL = "https://admin.bonbon-peach.com/api"
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
