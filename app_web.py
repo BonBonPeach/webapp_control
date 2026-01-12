@@ -13,11 +13,11 @@ import os
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 
-R2_INGREDIENTES = "IngredientesBase.csv"
-R2_RECETAS = "Recetas.csv"
-R2_PRECIOS = "CostoPorProducto.csv"
+R2_INGREDIENTES = "IngredientesBase"
+R2_RECETAS = "Recetas"
+R2_PRECIOS = "CostoPorProducto"
 R2_VENTAS = "VentasDiarias"
-R2_INVENTARIO = "Inventario.csv"
+R2_INVENTARIO = "Inventario"
 
 
 # --- CONFIGURACIÓN DE PÁGINA ---
