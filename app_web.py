@@ -122,7 +122,9 @@ def r2_read_csv(filename):
         st.error(f"Error cargando {filename}: {e}")
     except Exception as e:
             st.error(f"Error de conexión con el servidor R2: {e}")
-            return pd.DataFrame()
+            df = pd.DataFrame(data)
+            df.columns = [c.strip() for c in df.columns]
+            return df
 
 def r2_write_csv(df, filename):
     """Guardar CSV en Cloudflare R2"""
@@ -166,7 +168,7 @@ def clean_and_convert_float(value_str, default=0.0):
         return default
 
 # --- GESTIÓN DE DATOS ---
-@st.cache_data
+#@st.cache_data
 def leer_ingredientes_base():
     ingredientes = []
     
@@ -240,7 +242,7 @@ def guardar_inventario_csv(inventario_data):
         r2_write_csv(pd.DataFrame(datos), R2_INVENTARIO)
     except Exception as e: st.error(f"Error guardando inventario: {e}")
 
-@st.cache_data
+#@st.cache_data
 def leer_recetas():
     recetas = {}
     ingredientes = leer_ingredientes_base()
