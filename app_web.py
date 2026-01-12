@@ -52,8 +52,6 @@ def hash_password(password):
 
 def check_auth():
     now = time.time()
-    if not check_auth():
-     st.stop()
     # Si ya está autenticado, validar timeout
     if st.session_state.get("authenticated"):
         last_activity = st.session_state.get("last_activity", now)
