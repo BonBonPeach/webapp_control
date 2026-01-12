@@ -311,19 +311,31 @@ def guardar_ventas(ventas_data):
     encabezados = ['Fecha', 'Producto', 'Cantidad', 'Precio Unitario', 'Total Venta Bruto', 
                    'Descuento (%)', 'Descuento ($)', 'Costo Total', 'Ganancia Bruta', 
                    'Comision ($)', 'Ganancia Neta', 'Forma Pago']
-    if not ventas_data:
-        return
-    # Leer CSV existente desde R2
-    df_existente = r2_read_csv(R2_VENTAS)
+   # 1️⃣ Leer ventas actuales desde R2
+    df_actual = r2_read_csv(R2_VENTAS)
 
-    # Crear DataFrame con los mismos encabezados
-    df_nuevo = pd.DataFrame(ventas_data, columns=encabezados)
+    if df_actual.empty:
+        df_actual = pd.DataFrame(ventas_nuevas)
+    else:
+        df_nuevas = pd.DataFrame(ventas_nuevas)
+        df_actual = pd.concat([df_actual, df_nuevas], ignore_index=True)
 
-    # Concatenar ventas
-    df_final = pd.concat([df_existente, df_nuevo], ignore_index=True)
+    # 2️⃣ Normalizar columnas (evita errores silenciosos)
+    df_actual.columns = [c.strip() for c in df_actual.columns]
 
-    # Guardar de nuevo en R2
-    r2_write_csv(df_final, R2_VENTAS)
+    # 3️⃣ Convertir a JSON (formato esperado por el Worker)
+    data_json = df_actual.to_dict(orient="records")
+
+    # 4️⃣ Subir nuevamente a R2
+    response = requests.put(
+        f"{WORKER_URL}/{R2_VENTAS}",
+        json=data_json
+    )
+
+    if response.status_code != 200:
+        st.error(f"❌ Error al guardar ventas en R2: {response.text}")
+    else:
+        st.success("✅ Venta guardada correctamente")
 
 def leer_precios_desglose():
     precios = {}
