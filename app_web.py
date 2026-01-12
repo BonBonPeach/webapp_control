@@ -9,7 +9,6 @@ import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 from io import StringIO, BytesIO
-import os
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 
@@ -107,24 +106,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNCIONES AUXILIARES ---
 def r2_read_csv(filename):
-    """Cargar CSV desde Cloudflare R2"""
     try:
-        response = requests.get(f"{WORKER_URL}/{filename}")
+        response = requests.get(f"{WORKER_URL}/{filename}", timeout=10)
         if response.status_code == 200:
             data = response.json()
-            if data:  # Ahora devuelve array directamente
+            if isinstance(data, list):
                 return pd.DataFrame(data)
-            else:
-                return pd.DataFrame()  # Array vacío
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Error cargando {filename}: {e}")
-    except Exception as e:
-            st.error(f"Error de conexión con el servidor R2: {e}")
-            df = pd.DataFrame(data)
-            df.columns = [c.strip() for c in df.columns]
-            return df
+        return pd.DataFrame()
 
 def r2_write_csv(df, filename):
     """Guardar CSV en Cloudflare R2"""
@@ -286,6 +278,33 @@ def guardar_recetas_csv(recetas_data):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error guardando recetas: {e}")
 
+def guardar_ventas(ventas_data):
+    if not ventas_data:
+        return False
+
+    try:
+        # 1️⃣ Leer ventas actuales desde R2
+        df_actual = r2_read_csv(R2_VENTAS)
+
+        # 2️⃣ Convertir nuevas ventas a DF
+        df_nuevas = pd.DataFrame(ventas_data)
+
+        # 3️⃣ Concatenar
+        if df_actual.empty:
+            df_final = df_nuevas
+        else:
+            df_final = pd.concat([df_actual, df_nuevas], ignore_index=True)
+
+        # 4️⃣ Normalizar columnas
+        df_final.columns = [c.strip() for c in df_final.columns]
+
+        # 5️⃣ Guardar en R2
+        return r2_write_csv(df_final, R2_VENTAS)
+
+    except Exception as e:
+        st.error(f"❌ Error guardando ventas: {e}")
+        return False
+
 def leer_ventas(fecha_inicio=None, fecha_fin=None):
     ventas = []
     try:
@@ -307,7 +326,7 @@ def leer_ventas(fecha_inicio=None, fecha_fin=None):
     except Exception as e: st.error(f"Error lectura ventas: {e}")
     return ventas
 
-def guardar_ventas(ventas_data):
+
     encabezados = ['Fecha', 'Producto', 'Cantidad', 'Precio Unitario', 'Total Venta Bruto', 
                    'Descuento (%)', 'Descuento ($)', 'Costo Total', 'Ganancia Bruta', 
                    'Comision ($)', 'Ganancia Neta', 'Forma Pago']
@@ -620,8 +639,8 @@ def mostrar_precios():
             
             if st.button("Actualizar Precio"):
                 todos_precios = []
-                if os.path.exists(ruta_desglose_precios):
-                    todos_precios = pd.read_csv(ruta_desglose_precios, encoding='latin-1').to_dict('records')
+                todos_precios = r2_read_csv(R2_PRECIOS).to_dict('records')
+
                 
                 found = False
                 margen_nuevo = nuevo_precio - row['Costo Producción']
@@ -638,7 +657,7 @@ def mostrar_precios():
                         'Producto': prod_sel, 'Precio Venta': nuevo_precio,
                         'Margen Bruto': margen_nuevo, 'Margen Bruto (%)': margen_p_nuevo
                     })
-                pd.DataFrame(todos_precios).to_csv(ruta_desglose_precios, index=False, encoding='latin-1')
+                r2_write_csv(pd.DataFrame(todos_precios), R2_PRECIOS)
                 st.success("Precio actualizado."); st.rerun()
 
     st.dataframe(df.style.format({
@@ -749,15 +768,13 @@ def mostrar_ventas(f_inicio, f_fin):
                             if ing in inventario:
                                 inventario[ing]['stock_actual'] -= (cant_r * q)
                                 if inventario[ing]['stock_actual'] < 0: inventario[ing]['stock_actual'] = 0
-                
-            guardar_ventas(ventas_nuevas)
-            # Guardar inventario en R2
-            #guardar_inventario(inventario)
-
-            st.session_state.carrito = []
-            st.toast("✅ Venta registrada y guardada en la nube")
-            st.rerun()    
-            st.session_state.carrito = []; st.toast("✅ Venta registrada!"); st.rerun()
+            if guardar_ventas(ventas_nuevas):
+             guardar_inventario_csv(inventario)
+             st.session_state.carrito = []
+             st.toast("✅ Venta registrada y guardada en la nube")
+             st.rerun()
+            else:
+             st.error("❌ No se pudo guardar la venta") 
         else: st.info("Carrito vacío")
 
    with col_hist:
