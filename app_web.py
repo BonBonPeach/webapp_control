@@ -1,34 +1,44 @@
+import requests
 import streamlit as st
 import hashlib
 import pandas as pd
-import requests
 import os
 import unicodedata
 import re
 import datetime
 import plotly.express as px
 import plotly.graph_objects as go
-from io import StringIO
+from io import StringIO, BytesIO
+import os
 
-# =============================================================================
-# 1. CONFIGURACIÓN GLOBAL Y PARÁMETROS DE CLOUDFLARE R2
-# =============================================================================
-
-# URL de tu Worker de Cloudflare (Debe terminar sin /)
-# REEMPLAZA ESTA URL CON LA TUYA REAL CUANDO DESPLIEGUES EL WORKER
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 
+R2_INGREDIENTES = "IngredientesBase.csv"
+R2_RECETAS = "Recetas.csv"
+R2_PRECIOS = "CostoPorProducto.csv"
+R2_VENTAS = "VentasDiarias.csv"
+R2_INVENTARIO = "Inventario.csv"
+
+
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="BonBon - Peach · Sistema de Gestión R2",
+    page_title="BonBon - Peach · Sistema de control",
     page_icon="🍑",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- CONSTANTES DE NEGOCIO ---
+# --- HELPER: RUTAS RELATIVAS LOCALES ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ruta_ingredientes = os.path.join(BASE_DIR, "IngredientesBase.csv")
+ruta_recetas = os.path.join(BASE_DIR, "Recetas.csv")
+ruta_desglose_precios = os.path.join(BASE_DIR, "CostoPorProducto.csv")
+ruta_venta_diaria = os.path.join(BASE_DIR, "VentasDiarias.csv")
+ruta_inventario = os.path.join(BASE_DIR, "Inventario.csv")
+
+# --- CONSTANTES ---
 COMISION_BASE_PORCENTAJE = 3.5
 TASA_IVA_PORCENTAJE = 16.0
-# Cálculo de comisión real incluyendo IVA sobre la comisión bancaria
 COMISION_TARJETA = COMISION_BASE_PORCENTAJE * (1 + (TASA_IVA_PORCENTAJE / 100))
 
 # --- DICCIONARIOS PARA TRADUCCIÓN DE FECHAS ---
@@ -38,130 +48,81 @@ DIAS_ESP = {
 }
 ORDEN_DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-# =============================================================================
-# 2. FUNCIONES DE COMUNICACIÓN CON EL WORKER (API R2)
-# =============================================================================
-
-def api_r2_leer(nombre_recurso):
-    """
-    Solicita datos al Worker de Cloudflare. 
-    Se espera que el Worker devuelva un JSON (lista de diccionarios).
-    """
-    try:
-        url = f"{WORKER_URL}/{nombre_recurso}"
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            return pd.DataFrame(data)
-        elif response.status_code == 404:
-            # Si el archivo no existe aún en el bucket R2, devolvemos un DataFrame vacío
-            return pd.DataFrame()
-        else:
-            st.error(f"Error de API ({response.status_code}): {response.text}")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error de conexión con el servidor R2: {e}")
-        return pd.DataFrame()
-
-def api_r2_guardar(df, nombre_recurso):
-    """
-    Envía un DataFrame al Worker en formato JSON para que sea persistido en R2.
-    """
-    try:
-        if df is None or (isinstance(df, pd.DataFrame) and df.empty and nombre_recurso != 'ventas'):
-             # Permitimos guardar ventas vacías si es inicialización, pero validamos general
-             pass
-        
-        # Convertimos el DataFrame a una lista de diccionarios (formato JSON estándar)
-        payload = df.to_dict('records')
-        url = f"{WORKER_URL}/{nombre_recurso}"
-        
-        response = requests.post(url, json=payload, timeout=20)
-        
-        if response.status_code == 200:
-            # Limpiamos el caché de Streamlit para asegurar que la próxima lectura sea fresca
-            st.cache_data.clear()
-            return True
-        else:
-            st.error(f"Error al guardar en R2 ({response.status_code}): {response.text}")
-            return False
-    except Exception as e:
-        st.error(f"Error crítico al sincronizar con Cloudflare: {e}")
-        return False
-
-# =============================================================================
-# 3. SEGURIDAD, ESTILOS Y AUTENTICACIÓN
-# =============================================================================
-
+# --- AUTENTICACIÓN ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Credenciales de acceso
 USERS = {
     "admin": hash_password("BonBonAdmin!"),
     "ventas": hash_password("VentasBBP2025!")
 }
 
 def check_auth():
-    """Maneja el estado de sesión y el formulario de acceso."""
     if st.session_state.get("authenticated"):
         return True
     
     st.markdown("""
-        <div style='text-align: center; padding: 40px 0;'>
-            <h1 style='color: #F1B48B; font-size: 3rem;'>🍑 BonBon - Peach</h1>
-            <p style='color: #666; font-size: 1.2rem;'>Sistema de Gestión Cloud (R2 Storage)</p>
-        </div>
+    <div style='text-align: center; padding: 50px 20px;'>
+        <h1 style='color: #F1B48B;'>🍑 BonBon - Peach</h1>
+        <p style='color: #666;'>Sistema de Gestión Integral</p>
+    </div>
     """, unsafe_allow_html=True)
     
-    _, col_login, _ = st.columns([1, 1.5, 1])
-    with col_login:
-        with st.form("login_form"):
-            st.markdown("### Acceso al Sistema")
-            u = st.text_input("Usuario")
-            p = st.text_input("Contraseña", type="password")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
-            
-            if submit:
-                if u in USERS and hash_password(p) == USERS[u]:
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        with st.form("login"):
+            username = st.text_input("Usuario")
+            password = st.text_input("Contraseña", type="password")
+            if st.form_submit_button("Acceder", use_container_width=True):
+                if username in USERS and hash_password(password) == USERS[username]:
                     st.session_state.authenticated = True
                     st.rerun()
                 else:
-                    st.error("Credenciales no válidas.")
+                    st.error("Credenciales incorrectas")
     return False
 
-# Estilos CSS personalizados para mantener la identidad visual
+# --- ESTILOS CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #FFF6FB; }
     .main .block-container {
         background-color: #FFFFFF;
-        border-radius: 20px;
-        padding: 2rem;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        margin-top: 20px;
+        border-radius: 15px;
+        padding: 1rem 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     }
+    h1, h2, h3 { color: #4B2840; }
     .section-header {
-        font-size: 1.8rem; color: #4B2840;
-        border-left: 6px solid #F1B48B;
-        padding-left: 15px; margin-bottom: 25px;
-        font-weight: 700;
+        font-size: 1.5rem; color: #4B2840;
+        border-bottom: 3px solid #F1B48B;
+        padding-bottom: 0.5rem; margin-bottom: 1.5rem;
+        font-weight: 600;
     }
     .stButton button {
         background-color: #F1B48B; color: white;
-        border: none; border-radius: 10px;
-        padding: 0.5rem 1rem; transition: all 0.3s ease;
+        border: none; border-radius: 8px; font-weight: bold;
     }
-    .stButton button:hover {
-        background-color: #CE8CCF; transform: translateY(-2px);
-    }
-    [data-testid="stMetricValue"] { color: #4B2840; font-weight: 800; }
+    .stButton button:hover { background-color: #CE8CCF; color: white; }
+    [data-testid="stMetricValue"] { font-size: 1.5rem; color: #4B2840; }
 </style>
 """, unsafe_allow_html=True)
 
-# =============================================================================
-# 4. UTILIDADES DE PROCESAMIENTO
-# =============================================================================
+# --- FUNCIONES AUXILIARES ---
+def r2_read_csv(filename, encoding="latin-1"):
+    r = requests.get(f"{WORKER_URL}/{filename}")
+    if r.status_code != 200 or not r.text.strip():
+        return pd.DataFrame()
+    return pd.read_csv(StringIO(r.text), encoding=encoding)
+
+def r2_write_csv(df, filename, encoding="latin-1"):
+    csv_data = df.to_csv(index=False, encoding=encoding)
+    r = requests.put(
+        f"{WORKER_URL}/{filename}",
+        data=csv_data,
+        headers={"Content-Type": "text/csv"}
+    )
+    if r.status_code != 200:
+        raise Exception("Error writing file to R2")
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
@@ -170,422 +131,675 @@ def normalizar_texto(texto):
     texto = str(unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('utf-8'))
     return re.sub(r'[^a-z0-9\s]', '', texto)
 
-def clean_and_convert_float(value, default=0.0):
-    if value is None or pd.isna(value): return default
-    if isinstance(value, (int, float)): return round(float(value), 4)
-    try:
-        s = str(value).strip().replace('$', '').replace(',', '').replace('%', '')
-        return round(float(s), 4) if s else default
-    except: return default
+def clean_and_convert_float(value_str, default=0.0):
+    if isinstance(value_str, (int, float)): 
+        return round(float(value_str), 2)  # <--- Añadido round
+    if not isinstance(value_str, str): 
+        return default
+    cleaned = value_str.strip().replace('$', '').replace(',', '').replace('%', '')
+    try: 
+        return round(float(cleaned), 2)    # <--- Añadido round
+    except (ValueError, TypeError): 
+        return default
 
-# =============================================================================
-# 5. GESTIÓN DE DATOS (MIGRADO A API R2)
-# =============================================================================
-
+# --- GESTIÓN DE DATOS ---
 @st.cache_data
 def leer_ingredientes_base():
-    """Obtiene los ingredientes desde R2."""
-    df = api_r2_leer('ingredientes')
     ingredientes = []
-    if not df.empty:
-        for _, fila in df.iterrows():
-            nombre = str(fila.get('Ingrediente', '')).strip()
-            if not nombre: continue
-            
-            c_compra = clean_and_convert_float(fila.get(' Costo de Compra ', 0))
-            q_compra = clean_and_convert_float(fila.get('Cantidad por Unidad de Compra', 0))
-            c_receta = clean_and_convert_float(fila.get('Costo por Unidad Receta', 0))
-            
-            if q_compra > 0 and c_receta == 0:
-                c_receta = c_compra / q_compra
+    
+    try:
+            df = r2_read_csv(R2_INGREDIENTES)
+            for _, fila in df.iterrows():
+                nombre = str(fila.get('Ingrediente', '')).strip()
+                if not nombre: continue
+                costo_compra = clean_and_convert_float(fila.get(' Costo de Compra ', '0'))
+                cantidad_compra = clean_and_convert_float(fila.get('Cantidad por Unidad de Compra', '0'))
+                costo_receta = clean_and_convert_float(fila.get('Costo por Unidad Receta', '0'))
                 
-            ingredientes.append({
-                'nombre': nombre,
-                'proveedor': str(fila.get('Proveedor', '')).strip(),
-                'unidad_compra': str(fila.get('Unidad de Compra', '')).strip(),
-                'costo_compra': c_compra,
-                'cantidad_compra': q_compra,
-                'unidad_receta': str(fila.get('Unidad Receta', '')).strip(),
-                'costo_receta': c_receta,
-                'nombre_normalizado': normalizar_texto(nombre)
-            })
+                if cantidad_compra != 0 and costo_receta == 0:
+                    costo_receta = costo_compra / cantidad_compra
+                
+                ingredientes.append({
+                    'nombre': nombre, 'proveedor': str(fila.get('Proveedor', '')).strip(),
+                    'costo_compra': costo_compra, 'cantidad_compra': cantidad_compra,
+                    'unidad_compra': str(fila.get('Unidad de Compra', '')).strip(),
+                    'unidad_receta': str(fila.get('Unidad Receta', '')).strip(),
+                    'costo_receta': costo_receta, 'nombre_normalizado': normalizar_texto(nombre)
+                })
+    except Exception as e: st.error(f"Error ingredientes: {e}")
     return ingredientes
 
-def guardar_ingredientes_base(lista_ingredientes):
-    """Sincroniza ingredientes con R2."""
-    rows = []
-    for ing in sorted(lista_ingredientes, key=lambda x: x['nombre']):
-        rows.append({
-            'Ingrediente': ing['nombre'],
-            'Proveedor': ing['proveedor'],
-            'Unidad de Compra': ing['unidad_compra'],
-            ' Costo de Compra ': f"{ing.get('costo_compra', 0.0):.2f}",
-            'Cantidad por Unidad de Compra': f"{ing.get('cantidad_compra', 0.0):.4f}",
-            'Unidad Receta': ing['unidad_receta'],
-            'Costo por Unidad Receta': f"{ing.get('costo_receta', 0.0):.4f}"
-        })
-    return api_r2_guardar(pd.DataFrame(rows), 'ingredientes')
+def guardar_ingredientes_base(ingredientes_data):
+    try:
+        datos = []
+        for ing in sorted(ingredientes_data, key=lambda x: x['nombre']):
+            datos.append({
+                'Ingrediente': ing['nombre'], 'Proveedor': ing['proveedor'],
+                'Unidad de Compra': ing['unidad_compra'],
+                ' Costo de Compra ': f"{ing.get('costo_compra', 0.0):.2f}",
+                'Cantidad por Unidad de Compra': f"{ing.get('cantidad_compra', 0.0)}",
+                'Unidad Receta': ing['unidad_receta'],
+                'Costo por Unidad Receta': f"{ing.get('costo_receta', 0.0):.4f}"
+            })
+        
+        r2_write_csv(pd.DataFrame(datos), R2_INGREDIENTES)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"Error guardando ingredientes: {e}")
+        return False
 
 def leer_inventario():
-    """Lee el stock desde R2."""
-    df = api_r2_leer('inventario')
     inventario = {}
-    if not df.empty:
-        for _, fila in df.iterrows():
-            nombre = str(fila.get('Ingrediente', '')).strip()
-            if nombre:
-                inventario[nombre] = {
-                    'stock_actual': clean_and_convert_float(fila.get('Stock Actual', 0)),
-                    'min': clean_and_convert_float(fila.get('Stock Mínimo', 0)),
-                    'max': clean_and_convert_float(fila.get('Stock Máximo', 0))
-                }
+    try:
+            df = r2_read_csv(R2_INVENTARIO)
+            for _, fila in df.iterrows():
+                nombre = str(fila.get('Ingrediente', '')).strip()
+                if nombre:
+                    inventario[nombre] = {
+                        'stock_actual': clean_and_convert_float(fila.get('Stock Actual', '0')),
+                        'min': clean_and_convert_float(fila.get('Stock Mínimo', '0')),
+                        'max': clean_and_convert_float(fila.get('Stock Máximo', '0'))
+                    }
+    except Exception: pass
     return inventario
 
-def guardar_inventario_csv(dict_inv):
-    """Guarda el inventario en R2."""
-    rows = []
-    for nombre, data in dict_inv.items():
-        rows.append({
-            'Ingrediente': nombre,
-            'Stock Actual': f"{data.get('stock_actual', 0.0):.4f}",
-            'Stock Mínimo': f"{data.get('min', 0.0):.4f}",
-            'Stock Máximo': f"{data.get('max', 0.0):.4f}"
-        })
-    return api_r2_guardar(pd.DataFrame(rows), 'inventario')
+def guardar_inventario_csv(inventario_data):
+    try:
+        datos = []
+        for nombre, data in inventario_data.items():
+            datos.append({
+                'Ingrediente': nombre,
+                'Stock Actual': f"{data.get('stock_actual', 0.0):.4f}",
+                'Stock Mínimo': f"{data.get('min', 0.0):.4f}",
+                'Stock Máximo': f"{data.get('max', 0.0):.4f}"
+            })
+        r2_write_csv(pd.DataFrame(datos), R2_INVENTARIO)
+    except Exception as e: st.error(f"Error guardando inventario: {e}")
 
 @st.cache_data
 def leer_recetas():
-    """Lee y calcula costos de recetas desde R2."""
-    df = api_r2_leer('recetas')
-    ingredientes_master = leer_ingredientes_base()
     recetas = {}
-    
-    if not df.empty and 'Ingrediente' in df.columns:
-        productos = [col for col in df.columns if col != 'Ingrediente']
-        for p in productos:
-            recetas[p] = {'ingredientes': {}, 'costo_total': 0.0}
-            
-        for _, fila in df.iterrows():
-            ing_nombre = str(fila['Ingrediente']).strip()
-            if not ing_nombre: continue
-            for p in productos:
-                cantidad = clean_and_convert_float(fila.get(p, 0))
-                if cantidad > 0:
-                    recetas[p]['ingredientes'][ing_nombre] = cantidad
-                    
-        for prod, data in recetas.items():
-            total_costo = 0.0
-            for ing_nom, cant_nec in data['ingredientes'].items():
-                match = next((i for i in ingredientes_master if i['nombre'] == ing_nom), None)
-                if match: total_costo += match['costo_receta'] * cant_nec
-            recetas[prod]['costo_total'] = round(total_costo, 2)
+    ingredientes = leer_ingredientes_base()
+    try:
+            df = r2_read_csv(R2_RECETAS)
+            if not df.empty and 'Ingrediente' in df.columns:
+                productos = [col for col in df.columns if col != 'Ingrediente']
+                for p in productos: recetas[p] = {'ingredientes': {}, 'costo_total': 0.0}
+                
+                for _, fila in df.iterrows():
+                    ing_nombre = str(fila['Ingrediente']).strip()
+                    if not ing_nombre: continue
+                    for p in productos:
+                        if p in fila:
+                            cant = clean_and_convert_float(fila[p])
+                            if cant > 0: recetas[p]['ingredientes'][ing_nombre] = cant
+                
+                for p, datos in recetas.items():
+                    costo = 0.0
+                    for ing_nom, cant in datos['ingredientes'].items():
+                        ing_info = next((i for i in ingredientes if i['nombre'] == ing_nom), None)
+                        if ing_info: costo += ing_info['costo_receta'] * cant
+                    recetas[p]['costo_total'] = costo
+    except Exception as e: st.error(f"Error recetas: {e}")
     return recetas
 
-def guardar_recetas_csv(dict_recetas):
-    """Guarda recetas en formato matricial en R2."""
-    set_ings = set()
-    for r in dict_recetas.values(): set_ings.update(r['ingredientes'].keys())
-    lista_ings = sorted(list(set_ings))
-    productos = sorted(dict_recetas.keys())
-    
-    matrix = []
-    for ing in lista_ings:
-        fila = {'Ingrediente': ing}
-        for p in productos:
-            fila[p] = dict_recetas[p]['ingredientes'].get(ing, '')
-        matrix.append(fila)
-    return api_r2_guardar(pd.DataFrame(matrix), 'recetas')
+def guardar_recetas_csv(recetas_data):
+    try:
+        todos_ings = set()
+        for r in recetas_data.values(): todos_ings.update(r['ingredientes'].keys())
+        todos_ings = sorted(list(todos_ings))
+        nombres_prod = sorted(recetas_data.keys())
+        
+        data = []
+        for ing in todos_ings:
+            fila = {'Ingrediente': ing}
+            for prod in nombres_prod:
+                fila[prod] = recetas_data[prod]['ingredientes'].get(ing, '')
+            data.append(fila)
+        r2_write_csv(pd.DataFrame(data), R2_RECETAS)
+        st.cache_data.clear()
+    except Exception as e: st.error(f"Error guardando recetas: {e}")
 
-def leer_ventas(f_inicio=None, f_fin=None):
-    """Histórico de ventas desde R2."""
-    df = api_r2_leer('ventas')
-    if df.empty: return []
-    
-    if 'Fecha' in df.columns:
-        df['Fecha_DT'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
-        df = df.dropna(subset=['Fecha_DT'])
-        if f_inicio and f_fin:
-            mask = (df['Fecha_DT'].dt.date >= f_inicio) & (df['Fecha_DT'].dt.date <= f_fin)
-            df = df.loc[mask]
-            
-        cols_num = ['Total Venta Bruto', 'Ganancia Neta', 'Cantidad', 'Comision ($)', 'Descuento ($)', 'Costo Total']
-        for c in cols_num:
-            if c in df.columns: df[c] = df[c].apply(clean_and_convert_float)
+def leer_ventas(fecha_inicio=None, fecha_fin=None):
+    ventas = []
+    try:
+            df = r2_read_csv(R2_VENTAS)
+            if not df.empty and 'Fecha' in df.columns:
+                df['Fecha_DT'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
+                df = df.dropna(subset=['Fecha_DT'])
                 
-    return df.to_dict('records')
+                if fecha_inicio and fecha_fin:
+                    mask = (df['Fecha_DT'].dt.date >= fecha_inicio) & (df['Fecha_DT'].dt.date <= fecha_fin)
+                    df = df.loc[mask]
+                
+                numeric_cols = ['Total Venta Bruto', 'Ganancia Neta', 'Cantidad', 'Comision ($)', 'Descuento ($)']
+                for col in numeric_cols:
+                    if col in df.columns:
+                         if df[col].dtype == 'object':
+                             df[col] = df[col].astype(str).str.replace(',', '', regex=False).str.replace('$', '', regex=False).astype(float)
+                ventas = df.to_dict('records')
+    except Exception as e: st.error(f"Error lectura ventas: {e}")
+    return ventas
 
+def guardar_ventas(ventas_data):
+    encabezados = ['Fecha', 'Producto', 'Cantidad', 'Precio Unitario', 'Total Venta Bruto', 
+                   'Descuento (%)', 'Descuento ($)', 'Costo Total', 'Ganancia Bruta', 
+                   'Comision ($)', 'Ganancia Neta', 'Forma Pago']
+    if not ventas_data:
+        return
+    # Leer CSV existente desde R2
+    df_existente = r2_read_csv(R2_VENTAS)
+
+    # Crear DataFrame con los mismos encabezados
+    df_nuevo = pd.DataFrame(ventas_data, columns=encabezados)
+
+    # Concatenar ventas
+    df_final = pd.concat([df_existente, df_nuevo], ignore_index=True)
+
+    # Guardar de nuevo en R2
+    r2_write_csv(df_final, R2_VENTAS)
+    
 def leer_precios_desglose():
-    """Maestro de precios desde R2."""
-    df = api_r2_leer('desglose')
     precios = {}
-    if not df.empty:
-        for _, row in df.iterrows():
-            p_nom = str(row.get('Producto', ''))
-            if p_nom:
-                precios[p_nom] = {
+    try:
+            df = r2_read_csv(R2_PRECIOS)
+            for _, row in df.iterrows():
+                precios[row['Producto']] = {
                     'precio_venta': clean_and_convert_float(row.get('Precio Venta')),
                     'margen': clean_and_convert_float(row.get('Margen Bruto')),
                     'margen_porc': clean_and_convert_float(row.get('Margen Bruto (%)'))
                 }
+    except: pass
     return precios
 
-def calcular_reposicion_sugerida(f_inicio, f_fin):
-    """Calcula insumos necesarios basados en ventas históricas."""
-    ventas = leer_ventas(f_inicio, f_fin)
+def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
+    ventas = leer_ventas(fecha_inicio, fecha_fin)
     recetas = leer_recetas()
-    ings_base = leer_ingredientes_base()
-    uso = {}
+    ingredientes_base = leer_ingredientes_base()
+    ingredientes_utilizados = {}
     
-    for v in ventas:
-        prod = v.get('Producto')
-        cant = clean_and_convert_float(v.get('Cantidad', 0))
-        if prod in recetas:
-            for ing, cant_r in recetas[prod]['ingredientes'].items():
-                uso[ing] = uso.get(ing, 0) + (cant_r * cant)
-                
-    res = []
-    for ing, cant_n in uso.items():
-        info = next((i for i in ings_base if i['nombre'] == ing), None)
+    for venta in ventas:
+        producto = venta.get('Producto')
+        cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
+        if producto in recetas:
+            for ing_nom, cant_receta in recetas[producto]['ingredientes'].items():
+                total_ing = cant_receta * cantidad_vendida
+                ingredientes_utilizados[ing_nom] = ingredientes_utilizados.get(ing_nom, 0) + total_ing
+    
+    resultado = []
+    for ing_nom, cant_necesaria in ingredientes_utilizados.items():
+        if cant_necesaria <= 0: continue
+        info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
         if info:
-            costo_r = cant_n * info['costo_receta']
-            res.append({
-                'Ingrediente': ing, 'Cantidad Necesaria': cant_n,
-                'Unidad': info['unidad_receta'], 'Proveedor': info['proveedor'],
-                'Costo Reposición': costo_r
+            cant_compra = info['cantidad_compra']
+            porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
+            costo_reposicion = cant_necesaria * info['costo_receta']
+            resultado.append({
+                'Ingrediente': ing_nom, 'Cantidad Necesaria': cant_necesaria,
+                'Unidad': info['unidad_receta'], 'Costo Compra Base': info['costo_compra'],
+                'Proveedor': info['proveedor'], '% Unidad Compra': porcentaje,
+                'Costo Reposición': costo_reposicion
             })
-    return sorted(res, key=lambda x: x['Ingrediente'])
+    return sorted(resultado, key=lambda x: x['Ingrediente'])
 
-# =============================================================================
-# 6. VISTAS DE LA INTERFAZ
-# =============================================================================
+# --- PESTAÑAS Y VISTAS ---
 
 def mostrar_dashboard(f_inicio, f_fin):
-    st.markdown('<div class="section-header">📊 Dashboard de Rendimiento</div>', unsafe_allow_html=True)
-    ventas_raw = leer_ventas(f_inicio, f_fin)
-    if not ventas_raw:
-        st.info("No hay datos para el período seleccionado.")
+    st.markdown('<div class="section-header">📊 Dashboard General</div>', unsafe_allow_html=True)
+    
+    ventas = leer_ventas(f_inicio, f_fin)
+    if not ventas:
+        st.warning("No hay datos para el rango seleccionado.")
         return
 
-    df = pd.DataFrame(ventas_raw)
-    t_venta = df['Total Venta Bruto'].sum()
-    t_ganancia = df['Ganancia Neta'].sum()
-    t_trans = len(df)
-    t_avg = t_venta / t_trans if t_trans > 0 else 0
+    df_filtered = pd.DataFrame(ventas)
     
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Ventas Totales", f"${t_venta:,.2f}")
-    m2.metric("Ganancia Neta", f"${t_ganancia:,.2f}")
-    m3.metric("Ticket Promedio", f"${t_avg:,.2f}")
-    m4.metric("Transacciones", f"{t_trans}")
+    # --- KPIs ---
+    total_ventas = df_filtered['Total Venta Bruto'].sum()
+    total_ganancia = df_filtered['Ganancia Neta'].sum()
+    total_transacciones = len(df_filtered)
     
-    st.divider()
+    # METRICO NUEVO: TICKET PROMEDIO
+    ticket_promedio = total_ventas / total_transacciones if total_transacciones > 0 else 0
     
-    c_izq, c_der = st.columns([2, 1])
-    with c_izq:
-        st.subheader("Tendencia Diaria")
-        df_d = df.groupby(df['Fecha_DT'].dt.date).agg({'Total Venta Bruto': 'sum', 'Ganancia Neta': 'sum'}).reset_index()
-        fig = px.area(df_d, x='Fecha_DT', y=['Total Venta Bruto', 'Ganancia Neta'], 
-                      color_discrete_map={'Total Venta Bruto': '#F1B48B', 'Ganancia Neta': '#4B2840'},
-                      template='plotly_white')
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ventas Totales", f"${total_ventas:,.2f}")
+    c2.metric("Ganancia Neta", f"${total_ganancia:,.2f}")
+    c3.metric("Ticket Promedio", f"${ticket_promedio:,.2f}") # Nuevo
+    c4.metric("Transacciones", f"{total_transacciones}")
+    
+    st.markdown("---")
+    
+    # --- GRÁFICO 1: TENDENCIA DIARIA ---
+    st.subheader("Tendencia de Ventas (Diario)")
+    daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(
+        Ventas=('Total Venta Bruto', 'sum'),
+        Ganancia=('Ganancia Neta', 'sum')
+    ).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
+    
+    fig_daily = px.line(daily_summary, x='Fecha', y=['Ventas', 'Ganancia'], 
+                        markers=True, color_discrete_sequence=['#4B2840', '#F1B48B'], template='plotly_white')
+    st.plotly_chart(fig_daily, use_container_width=True)
+    
+    # 3. Análisis de Productos
+    st.subheader("Desempeño de Productos")
+    col_g1, col_g2 = st.columns(2)
+    
+    product_summary = df_filtered.groupby('Producto').agg(
+        Total_Venta=('Total Venta Bruto', 'sum'),
+        Total_Ganancia=('Ganancia Neta', 'sum'),
+        Cantidad=('Cantidad', 'sum')
+    ).reset_index()
+    
+    with col_g1:
+        top_cant = product_summary.sort_values('Cantidad', ascending=False).head(10)
+        fig_prod = px.bar(top_cant, x='Cantidad', y='Producto', orientation='h',
+                          title="Top 10 Productos (Volumen)", 
+                          text_auto=True, template='plotly_white',
+                          color='Cantidad', color_continuous_scale='Purples')
+        fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_prod, use_container_width=True)
+        
+    with col_g2:
+        top_gan = product_summary.sort_values('Total_Ganancia', ascending=False).head(10)
+        fig_gan = px.bar(top_gan, x='Total_Ganancia', y='Producto', orientation='h',
+                         title="Top 10 Productos (Ganancia $)",
+                         text_auto='.2s', template='plotly_white',
+                         color='Total_Ganancia', color_continuous_scale='Peach')
+        fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_gan, use_container_width=True)
+
+    # --- GRÁFICO 2: PATRONES SEMANALES (SUPERPOSICIÓN) ---
+    st.subheader("🔎 Patrones Semanales ")
+    st.caption("Compara el rendimiento de los días de la semana entre diferentes semanas para identificar patrones (ej. 'Los martes siempre son bajos').")
+    
+    # Preparar datos para superposición
+    df_patron = df_filtered.copy()
+    # Mapear día en inglés a español y asegurar orden
+    df_patron['Dia_Nombre'] = df_patron['Fecha_DT'].dt.day_name().map(DIAS_ESP)
+    # Agrupar por semana (Inicio Lunes)
+    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
+    
+    patron_agrupado = df_patron.groupby(['Inicio_Semana', 'Dia_Nombre'])['Total Venta Bruto'].sum().reset_index()
+    
+    fig_patron = px.line(patron_agrupado, x='Dia_Nombre', y='Total Venta Bruto', color='Inicio_Semana',
+                         category_orders={'Dia_Nombre': ORDEN_DIAS}, # Forzar orden Lun-Dom
+                         title="Comparativa Semanal (Día a Día)",
+                         labels={'Total Venta Bruto': 'Ventas ($)', 'Inicio_Semana': 'Semana del'},
+                         template='plotly_white')
+    st.plotly_chart(fig_patron, use_container_width=True)
+
+    # --- TABLA: RESUMEN SEMANAL (LUNES A DOMINGO) ---
+    st.subheader("Resumen Semanal (Lunes - Domingo)")
+    
+    # Agrupar forzando inicio en Lunes
+    df_filtered['Semana_Inicio'] = df_filtered['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
+    
+    weekly = df_filtered.groupby('Semana_Inicio').agg({
+        'Total Venta Bruto': 'sum',
+        'Ganancia Neta': 'sum',
+        'Cantidad': 'sum'
+    }).reset_index().sort_values('Semana_Inicio', ascending=False)
+    
+    # Formatear columna fecha para visualización "Lun DD/MM - Dom DD/MM"
+    weekly['Periodo'] = weekly['Semana_Inicio'].apply(
+        lambda x: f"Lun {x.strftime('%d/%m')} - Dom {(x + datetime.timedelta(days=6)).strftime('%d/%m')}"
+    )
+    
+    st.dataframe(
+        weekly[['Periodo', 'Total Venta Bruto', 'Ganancia Neta', 'Cantidad']].style.format({
+            'Total Venta Bruto': '${:,.2f}', 
+            'Ganancia Neta': '${:,.2f}'
+        }), 
+        use_container_width=True, hide_index=True
+    )
+
+def mostrar_ingredientes():
+    st.markdown('<div class="section-header">🧪 Gestión de Ingredientes</div>', unsafe_allow_html=True)
+    ingredientes = leer_ingredientes_base()
+    
+    with st.expander("➕ Agregar / Modificar Ingrediente"):
+        nombres = [i['nombre'] for i in ingredientes]
+        sel = st.selectbox("Seleccionar para editar (o dejar vacío para nuevo):", [""] + nombres)
+        datos_edit = next((i for i in ingredientes if i['nombre'] == sel), {}) if sel else {}
+            
+        with st.form("ing_form"):
+            c1, c2 = st.columns(2)
+            nombre = c1.text_input("Nombre*", value=datos_edit.get('nombre', ''))
+            prov = c2.text_input("Proveedor", value=datos_edit.get('proveedor', ''))
+            c3, c4 = st.columns(2)
+            u_compra = c3.text_input("Unidad Compra (ej. kg)*", value=datos_edit.get('unidad_compra', ''))
+            costo_compra = c4.number_input("Costo Compra ($)*", min_value=0.0, value=float(datos_edit.get('costo_compra', 0)))
+            c5, c6 = st.columns(2)
+            cant_compra = c5.number_input("Cant. por U. Compra*", min_value=0.0, value=float(datos_edit.get('cantidad_compra', 0)))
+            u_receta = c6.text_input("Unidad Receta (ej. gr)*", value=datos_edit.get('unidad_receta', ''))
+            
+            if st.form_submit_button("Guardar Ingrediente"):
+                if nombre and u_compra and costo_compra > 0 and cant_compra > 0:
+                    nuevo_costo_receta = costo_compra / cant_compra
+                    nuevo_item = {
+                        'nombre': nombre, 'proveedor': prov, 'unidad_compra': u_compra,
+                        'costo_compra': costo_compra, 'cantidad_compra': cant_compra,
+                        'unidad_receta': u_receta, 'costo_receta': nuevo_costo_receta,
+                        'nombre_normalizado': normalizar_texto(nombre)
+                    }
+                    ingredientes = [i for i in ingredientes if i['nombre'] != nombre]
+                    ingredientes.append(nuevo_item)
+                    if guardar_ingredientes_base(ingredientes):
+                        st.success("Guardado."); st.rerun()
+                else: st.error("Faltan datos obligatorios.")
+
+    if ingredientes:
+        df = pd.DataFrame(ingredientes)
+        df['Costo Compra'] = df['costo_compra'].apply(lambda x: f"${x:.2f}")
+        df['Costo Receta'] = df['costo_receta'].apply(lambda x: f"${x:.4f}")
+        st.dataframe(df[['nombre', 'proveedor', 'unidad_compra', 'Costo Compra', 'cantidad_compra', 'unidad_receta', 'Costo Receta']], use_container_width=True, hide_index=True)
+
+def mostrar_recetas():
+    st.markdown('<div class="section-header">📝 Recetas y Costos</div>', unsafe_allow_html=True)
+    recetas = leer_recetas()
+    ingredientes = leer_ingredientes_base()
+    
+    col_izq, col_der = st.columns([1, 2])
+    with col_izq:
+        st.subheader("Menú")
+        nuevo_nom = st.text_input("Nueva receta:")
+        if st.button("Crear Receta") and nuevo_nom:
+            if nuevo_nom not in recetas:
+                recetas[nuevo_nom] = {'ingredientes': {}, 'costo_total': 0.0}
+                guardar_recetas_csv(recetas); st.success(f"Creada {nuevo_nom}"); st.rerun()
+        st.divider()
+        sel_receta = st.radio("Seleccionar Receta:", list(recetas.keys()))
+        
+    with col_der:
+        if sel_receta:
+            st.subheader(f"Editando: {sel_receta}")
+            datos = recetas[sel_receta]
+            if datos['ingredientes']:
+                lista_items = []
+                for ing, cant in datos['ingredientes'].items():
+                    info = next((i for i in ingredientes if i['nombre'] == ing), None)
+                    costo_parcial = (info['costo_receta'] * cant) if info else 0
+                    lista_items.append({'Ingrediente': ing, 'Cantidad': cant, 'Costo': costo_parcial})
+                st.dataframe(pd.DataFrame(lista_items).style.format({'Costo': "${:.2f}"}), use_container_width=True)
+                
+                to_del = st.selectbox("Eliminar ingrediente:", [""] + list(datos['ingredientes'].keys()))
+                if st.button("Eliminar") and to_del:
+                    del recetas[sel_receta]['ingredientes'][to_del]; guardar_recetas_csv(recetas); st.rerun()
+            else: st.info("Receta vacía.")
+            
+            st.metric("Costo Total Receta", f"${datos['costo_total']:.2f}")
+            st.divider()
+            c1, c2, c3 = st.columns([2,1,1])
+            ing_sel = c1.selectbox("Ingrediente", [i['nombre'] for i in ingredientes])
+            cant_sel = c2.number_input("Cantidad", min_value=0.0, step=0.1)
+            if c3.button("Agregar"):
+                recetas[sel_receta]['ingredientes'][ing_sel] = cant_sel; guardar_recetas_csv(recetas); st.rerun()
+
+def mostrar_precios():
+    st.markdown('<div class="section-header">💰 Análisis de Precios y Márgenes</div>', unsafe_allow_html=True)
+    recetas = leer_recetas()
+    precios_existentes = leer_precios_desglose()
+    
+    data_tabla = []
+    for prod, info_receta in recetas.items():
+        costo = info_receta['costo_total']
+        p_venta = precios_existentes.get(prod, {}).get('precio_venta', 0.0)
+        margen = p_venta - costo
+        margen_p = (margen / p_venta * 100) if p_venta else 0
+        
+        data_tabla.append({
+            'Producto': prod, 'Costo Producción': costo,
+            'Precio Venta': p_venta, 'Margen $': margen, 'Margen %': margen_p
+        })
+    
+    df = pd.DataFrame(data_tabla)
+    
+    # --- GRÁFICO VISUAL DE PRECIOS (NUEVO) ---
+    if not df.empty:
+        st.subheader("Estructura de Precios: Costo vs. Ganancia")
+        
+        # Para Plotly apilado, usamos Costo y Margen. La suma visual es el Precio.
+        fig = px.bar(df, x='Producto', y=['Costo Producción', 'Margen $'],
+                     title="Desglose del Precio de Venta",
+                     labels={'value': 'Dinero ($)', 'variable': 'Componente'},
+                     color_discrete_map={'Costo Producción': '#FF9AA2', 'Margen $': '#B5EAD7'}, # Rojo y Verde pastel
+                     template='plotly_white')
+        
+        fig.update_layout(barmode='stack', hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
         
-    with c_der:
-        st.subheader("Métodos de Pago")
-        df_p = df.groupby('Forma Pago')['Total Venta Bruto'].sum().reset_index()
-        fig_p = px.pie(df_p, values='Total Venta Bruto', names='Forma Pago', hole=0.4,
-                       color_discrete_sequence=['#CE8CCF', '#F1B48B'])
-        st.plotly_chart(fig_p, use_container_width=True)
+        # MÉTRICA EXTRA: TOP MARGEN PORCENTUAL
+        top_margen = df.sort_values('Margen %', ascending=False).head(3)
+        st.caption(f"🏆 Productos con mejor rendimiento (%): {', '.join(top_margen['Producto'].tolist())}")
+
+    with st.expander("✏️ Modificar Precio de Venta"):
+        prod_sel = st.selectbox("Producto:", df['Producto'].tolist())
+        if prod_sel:
+            row = df[df['Producto'] == prod_sel].iloc[0]
+            st.write(f"Costo actual: ${row['Costo Producción']:.2f}")
+            nuevo_precio = st.number_input("Nuevo Precio Venta:", value=float(row['Precio Venta']))
+            
+            if st.button("Actualizar Precio"):
+                todos_precios = []
+                if os.path.exists(ruta_desglose_precios):
+                    todos_precios = pd.read_csv(ruta_desglose_precios, encoding='latin-1').to_dict('records')
+                
+                found = False
+                margen_nuevo = nuevo_precio - row['Costo Producción']
+                margen_p_nuevo = (margen_nuevo / nuevo_precio * 100) if nuevo_precio else 0
+                
+                for item in todos_precios:
+                    if item['Producto'] == prod_sel:
+                        item['Precio Venta'] = nuevo_precio
+                        item['Margen Bruto'] = margen_nuevo
+                        item['Margen Bruto (%)'] = margen_p_nuevo
+                        found = True; break
+                if not found:
+                    todos_precios.append({
+                        'Producto': prod_sel, 'Precio Venta': nuevo_precio,
+                        'Margen Bruto': margen_nuevo, 'Margen Bruto (%)': margen_p_nuevo
+                    })
+                pd.DataFrame(todos_precios).to_csv(ruta_desglose_precios, index=False, encoding='latin-1')
+                st.success("Precio actualizado."); st.rerun()
+
+    st.dataframe(df.style.format({
+        'Costo Producción': "${:.2f}", 'Precio Venta': "${:.2f}", 
+        'Margen $': "${:.2f}", 'Margen %': "{:.1f}%"
+    }), use_container_width=True)
 
 def mostrar_ventas(f_inicio, f_fin):
-    st.markdown('<div class="section-header">🛒 Terminal de Ventas</div>', unsafe_allow_html=True)
+   st.markdown('<div class="section-header">🛒 Terminal de Ventas</div>', unsafe_allow_html=True)
+   ventas = leer_ventas(f_inicio, f_fin)
+   col_pos, col_hist = st.columns([2, 3])
     
-    if 'carrito' not in st.session_state: st.session_state.carrito = []
+# CORRECCIÓN: Convertir a DataFrame si es una lista, de lo contrario Pandas no funcionará
+   if isinstance(ventas, list):
+        ventas_df = pd.DataFrame(ventas)
+   else:
+        ventas_df = ventas
+
+    # --- Resumen Gráfico de Ventas (Donas) ---
+   if not ventas_df.empty:
+        st.subheader("📈 Resumen del Periodo Seleccionado")
+        cg1, cg2 = st.columns(2)
+        
+        with cg1:
+            # Gráfico Dona: Efectivo vs Tarjeta
+            if 'Forma Pago' in ventas_df.columns:
+                metodo_sum = ventas_df.groupby('Forma Pago')['Total Venta Bruto'].sum().reset_index()
+                fig_met = px.pie(metodo_sum, values='Total Venta Bruto', names='Forma Pago', hole=.5, 
+                                title="Distribución de Pago", 
+                                color_discrete_sequence=["#D4D4D4", "#95E9BF"])
+                st.plotly_chart(fig_met, use_container_width=True)
+            
+        with cg2:
+            # Gráfico Dona: Venta vs Ganancia
+            venta_t = ventas_df['Total Venta Bruto'].sum()
+            ganancia_t = ventas_df['Ganancia Neta'].sum()
+            costos_t = venta_t - ganancia_t
+            
+            fig_gan = px.pie(names=['Ganancia Neta', 'Costos operativos'], 
+                            values=[ganancia_t, costos_t], 
+                            hole=.5, title="Venta Bruta vs Utilidad", 
+                            color_discrete_sequence=["#80A6F8", "#A2FF9A"])
+            st.plotly_chart(fig_gan, use_container_width=True)
     
-    col_pos, col_hist = st.columns([2, 3])
-    
-    with col_pos:
-        st.subheader("Punto de Venta")
+        st.divider()
+       
+   with col_pos:
+        st.subheader("➕ Agregar al Carrito")
+        if 'carrito' not in st.session_state: st.session_state.carrito = []
         recetas = leer_recetas(); precios = leer_precios_desglose()
         
-        with st.form("pos_form", clear_on_submit=True):
-            prod = st.selectbox("Producto", [""] + sorted(list(recetas.keys())))
+        with st.form("add_form"):
+            prod = st.selectbox("Producto", [""] + list(recetas.keys()))
             c1, c2 = st.columns(2)
-            cant = c1.number_input("Cantidad", min_value=1, value=1)
-            desc = c2.number_input("Descuento %", min_value=0.0, max_value=100.0)
-            tarjeta = st.toggle("💳 Pago con Tarjeta")
+            cant = c1.number_input("Cant", min_value=1, value=1)
+            desc = c2.number_input("Desc %", min_value=0.0, max_value=100.0)
+            pago_tarjeta = st.checkbox("💳 Pago con Tarjeta")
             
             if st.form_submit_button("Agregar", use_container_width=True):
                 if prod:
-                    p_u = precios.get(prod, {}).get('precio_venta', 0)
+                    p_unit = precios.get(prod, {}).get('precio_venta', 0)
                     st.session_state.carrito.append({
                         'Producto': prod, 'Cantidad': cant, 
-                        'Precio Unitario': p_u, 'Descuento %': desc, 'Es Tarjeta': tarjeta
-                    })
-                    st.rerun()
+                        'Precio Unitario': p_unit, 'Descuento %': desc, 'Es Tarjeta': pago_tarjeta
+                    }); st.rerun()
 
+        st.markdown("---")
         if st.session_state.carrito:
-            st.divider()
-            total_c = 0
+            total_carrito = 0
             for i, item in enumerate(st.session_state.carrito):
-                sub = (item['Precio Unitario'] * item['Cantidad']) * (1 - item['Descuento %']/100)
-                total_c += sub
+                subtotal = (item['Precio Unitario'] * item['Cantidad']) * (1 - item['Descuento %']/100)
+                total_carrito += subtotal
                 with st.container():
-                    cd1, cd2 = st.columns([4, 1])
-                    cd1.write(f"**{item['Producto']}** (x{item['Cantidad']}) - ${sub:,.2f}")
-                    if cd2.button("🗑️", key=f"del_{i}"):
-                        st.session_state.carrito.pop(i); st.rerun()
-            
-            st.write(f"### Total: ${total_c:,.2f}")
-            if st.button("✅ REGISTRAR VENTA", type="primary", use_container_width=True):
-                # Lógica de guardado...
-                ventas_existentes = api_r2_leer('ventas')
-                nuevas = []
-                inv = leer_inventario()
-                f_str = datetime.date.today().strftime('%d/%m/%Y')
+                    c_det, c_del = st.columns([5, 1])
+                    with c_det:
+                        icon = "💳" if item['Es Tarjeta'] else "💵"
+                        st.markdown(f"**{item['Producto']}** x{item['Cantidad']} | {icon}")
+                        st.caption(f"${subtotal:.2f} (Desc: {item['Descuento %']}%)")
+                    with c_del:
+                        if st.button("❌", key=f"del_{i}"):
+                            st.session_state.carrito.pop(i); st.rerun()
+                    st.divider()
+
+            st.metric("Total a Pagar", f"${total_carrito:.2f}")
+
+            if st.button("✅ FINALIZAR VENTA", type="primary", use_container_width=True):
+                ventas_nuevas = []
+                fecha_hoy = datetime.date.today().strftime('%d/%m/%Y')
+                inventario = leer_inventario()
                 
                 for item in st.session_state.carrito:
-                    bruto = item['Precio Unitario'] * item['Cantidad']
-                    monto_d = bruto * (item['Descuento %']/100)
-                    neto_desc = bruto - monto_d
-                    com = neto_desc * (COMISION_TARJETA/100) if item['Es Tarjeta'] else 0
-                    costo_t = recetas[item['Producto']]['costo_total'] * item['Cantidad']
+                    p = item['Producto']; q = item['Cantidad']; pu = item['Precio Unitario']; d = item['Descuento %']; es_tarjeta = item['Es Tarjeta']
+                    total_bruto = pu * q; monto_desc = total_bruto * (d/100); subtotal = total_bruto - monto_desc
+                    comision = subtotal * (COMISION_TARJETA / 100) if es_tarjeta else 0.0
+                    costo_total = recetas[p]['costo_total'] * q
+                    total_neto = subtotal - comision; ganancia = total_neto - costo_total
                     
-                    nuevas.append({
-                        'Fecha': f_str, 'Producto': item['Producto'], 'Cantidad': item['Cantidad'],
-                        'Precio Unitario': item['Precio Unitario'], 'Total Venta Bruto': bruto,
-                        'Descuento ($)': monto_d, 'Costo Total': costo_t,
-                        'Comision ($)': com, 'Ganancia Neta': (neto_desc - com - costo_t),
-                        'Forma Pago': "Tarjeta" if item['Es Tarjeta'] else "Efectivo"
+                    ventas_nuevas.append({
+                        'Fecha': fecha_hoy, 'Producto': p, 'Cantidad': q,
+                        'Precio Unitario': pu, 'Total Venta Bruto': total_bruto,
+                        'Descuento (%)': d, 'Descuento ($)': monto_desc,
+                        'Costo Total': costo_total, 'Ganancia Bruta': subtotal - costo_total,
+                        'Comision ($)': comision, 'Ganancia Neta': ganancia,
+                        'Forma Pago': "Tarjeta" if es_tarjeta else "Efectivo"
                     })
-                    # Descontar stock
-                    for ing_n, q_r in recetas[item['Producto']]['ingredientes'].items():
-                        if ing_n in inv:
-                            inv[ing_n]['stock_actual'] -= (q_r * item['Cantidad'])
+                    if p in recetas:
+                        for ing, cant_r in recetas[p]['ingredientes'].items():
+                            if ing in inventario:
+                                inventario[ing]['stock_actual'] -= (cant_r * q)
+                                if inventario[ing]['stock_actual'] < 0: inventario[ing]['stock_actual'] = 0
                 
-                df_f = pd.concat([ventas_existentes, pd.DataFrame(nuevas)], ignore_index=True)
-                if api_r2_guardar(df_f, 'ventas') and guardar_inventario_csv(inv):
-                    st.session_state.carrito = []
-                    st.success("Venta sincronizada con R2."); st.rerun()
+                if os.path.exists(ruta_venta_diaria): df_old = pd.read_csv(ruta_venta_diaria, encoding='latin-1')
+                else: df_old = pd.DataFrame()
+                df_final = pd.concat([df_old, pd.DataFrame(ventas_nuevas)], ignore_index=True)
+                df_final.to_csv(ruta_venta_diaria, index=False, encoding='latin-1')
+                guardar_inventario_csv(inventario)
+                st.session_state.carrito = []; st.toast("✅ Venta registrada!"); st.rerun()
+        else: st.info("Carrito vacío")
 
-    with col_hist:
-        st.subheader("Últimos Registros")
-        vh = leer_ventas(f_inicio, f_fin)
-        if vh:
-            st.dataframe(pd.DataFrame(vh)[['Fecha', 'Producto', 'Cantidad', 'Total Venta Bruto', 'Forma Pago']], 
-                         use_container_width=True, hide_index=True)
+   with col_hist:
+        st.subheader("📜 Historial Reciente")
+        ventas_hist = leer_ventas(f_inicio, f_fin)
+        if ventas_hist:
+            df_h = pd.DataFrame(ventas_hist)
+            if 'Fecha_DT' in df_h.columns: df_h = df_h.sort_values('Fecha_DT', ascending=False)
+            st.dataframe(df_h[['Fecha', 'Producto', 'Cantidad', 'Total Venta Bruto', 'Forma Pago']], use_container_width=True, hide_index=True)
+        else: st.info("No hay ventas en este rango.")
 
 def mostrar_inventario():
-    st.markdown('<div class="section-header">📦 Inventario y Almacén</div>', unsafe_allow_html=True)
-    inv = leer_inventario()
-    if not inv:
-        st.warning("No hay datos de inventario en R2.")
-    else:
-        df_inv = pd.DataFrame([{'Ingrediente': k, **v} for k, v in inv.items()])
-        st.dataframe(df_inv, use_container_width=True, hide_index=True)
-        
-        with st.expander("Ajuste de Stock"):
-            with st.form("adj"):
-                sel_ing = st.selectbox("Ingrediente", df_inv['Ingrediente'].tolist())
-                nueva_q = st.number_input("Cantidad a sumar/restar", value=0.0)
-                if st.form_submit_button("Actualizar"):
-                    inv[sel_ing]['stock_actual'] += nueva_q
-                    if guardar_inventario_csv(inv): 
-                        st.success("Actualizado"); st.rerun()
-
-def mostrar_ingredientes():
-    st.markdown('<div class="section-header">🧪 Maestro de Ingredientes</div>', unsafe_allow_html=True)
-    ings = leer_ingredientes_base()
-    if ings:
-        st.dataframe(pd.DataFrame(ings).drop(columns=['nombre_normalizado']), use_container_width=True)
-    
-    with st.expander("Añadir / Editar Ingrediente"):
-        with st.form("ing_f"):
-            nom = st.text_input("Nombre")
-            c1, c2 = st.columns(2)
-            prov = c1.text_input("Proveedor")
-            costo = c2.number_input("Costo Compra", min_value=0.0)
-            u_c = st.text_input("Unidad Compra")
-            q_c = st.number_input("Equivalencia en Receta", min_value=0.01)
-            u_r = st.text_input("Unidad Receta")
+    st.markdown('<div class="section-header">📦 Inventario</div>', unsafe_allow_html=True)
+    inv = leer_inventario(); ings = leer_ingredientes_base()
+    for i in ings:
+        if i['nombre'] not in inv: inv[i['nombre']] = {'stock_actual': 0.0, 'min': 0.0, 'max': 0.0}
             
-            if st.form_submit_button("Guardar en R2"):
-                nuevo = {
-                    'nombre': nom, 'proveedor': prov, 'unidad_compra': u_c,
-                    'costo_compra': costo, 'cantidad_compra': q_c,
-                    'unidad_receta': u_r, 'costo_receta': costo/q_c
-                }
-                ings = [i for i in ings if i['nombre'] != nom]
-                ings.append(nuevo)
-                if guardar_ingredientes_base(ings): st.success("Sincronizado"); st.rerun()
-
-def mostrar_recetas():
-    st.markdown('<div class="section-header">📝 Recetas y Fichas Técnicas</div>', unsafe_allow_html=True)
-    recetas = leer_recetas(); ings = leer_ingredientes_base()
-    sel = st.selectbox("Seleccionar Receta", [""] + list(recetas.keys()))
-    
-    if sel:
-        st.write(f"### Costo: ${recetas[sel]['costo_total']:.2f}")
-        df_r = pd.DataFrame([{'Ingrediente': k, 'Cantidad': v} for k, v in recetas[sel]['ingredientes'].items()])
-        st.table(df_r)
-        
-        with st.form("add_i_r"):
-            i_sel = st.selectbox("Insumo", [i['nombre'] for i in ings])
-            q_sel = st.number_input("Cantidad", min_value=0.0)
-            if st.form_submit_button("Actualizar Receta"):
-                recetas[sel]['ingredientes'][i_sel] = q_sel
-                if guardar_recetas_csv(recetas): st.rerun()
-
-def mostrar_precios():
-    st.markdown('<div class="section-header">💰 Análisis de Precios</div>', unsafe_allow_html=True)
-    recetas = leer_recetas(); precios = leer_precios_desglose()
-    
     rows = []
-    for p, data in recetas.items():
-        costo = data['costo_total']
-        venta = precios.get(p, {}).get('precio_venta', 0)
-        rows.append({
-            'Producto': p, 'Costo': costo, 'Venta': venta, 'Margen $': venta - costo
-        })
+    for k, v in inv.items():
+        estado = "OK"
+        if v['max'] > 0:
+            if v['stock_actual'] < v['min']: estado = "🚨 URGENTE"
+            elif v['stock_actual'] < (v['min'] + v['max'])/2: estado = "⚠️ Bajo"
+        rows.append({'Ingrediente': k, 'Stock': v['stock_actual'], 'Min': v['min'], 'Max': v['max'], 'Estado': estado})
+        
+    df = pd.DataFrame(rows)
+    def color_row(row):
+        color = 'transparent'
+        if "URGENTE" in row['Estado']: color = '#FFDDDD'
+        elif "Bajo" in row['Estado']: color = '#FFFFAA'
+        return [f'background-color: {color}'] * len(row)
     
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.dataframe(df.style.apply(color_row, axis=1), use_container_width=True)
+    with st.expander("📥 Registrar Entrada Manual"):
+        c1, c2, c3 = st.columns([2,1,1])
+        ing_in = c1.selectbox("Ingrediente:", df['Ingrediente'].tolist())
+        cant_in = c2.number_input("Cantidad a agregar:", min_value=0.0)
+        if c3.button("Registrar Entrada"):
+            inv[ing_in]['stock_actual'] += cant_in; guardar_inventario_csv(inv); st.success(f"Actualizado {ing_in}"); st.rerun()
 
-def mostrar_reposicion(f_ini, f_fin):
+def mostrar_reposicion(f_inicio, f_fin):
     st.markdown('<div class="section-header">🔄 Reposición Sugerida</div>', unsafe_allow_html=True)
-    rep = calcular_reposicion_sugerida(f_ini, f_fin)
-    if rep:
-        df = pd.DataFrame(rep)
-        st.metric("Inversión Necesaria", f"${df['Costo Reposición'].sum():,.2f}")
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.warning("Sin datos para calcular.")
+    data_reposicion = calcular_reposicion_sugerida(f_inicio, f_fin)
+    
+    if data_reposicion:
+        df = pd.DataFrame(data_reposicion)
+        m1, m2 = st.columns(2)
+        m1.metric("Inversión Estimada", f"${df['Costo Reposición'].sum():,.2f}")
+        m2.metric("Items a Reponer", len(df))
+        st.divider()
+        fig = px.bar(df.sort_values('Costo Reposición', ascending=False).head(10), 
+                     x='Ingrediente', y='Costo Reposición', title="Top Costos Reposición", 
+                     color='Costo Reposición', color_continuous_scale='Bluered', template='plotly_white')
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df[['Ingrediente', 'Cantidad Necesaria', 'Unidad', 'Proveedor', 'Costo Reposición']], use_container_width=True)
+        csv = df.to_csv(index=False, encoding='latin-1')
+        st.download_button("📥 Descargar CSV", data=csv, file_name=f"Reposicion.csv", mime='text/csv')
+    else: st.warning("No hay datos suficientes.")
 
-# =============================================================================
-# 7. CICLO PRINCIPAL
-# =============================================================================
-
+# --- MAIN LOOP ---
 def main():
     if not check_auth(): st.stop()
-    
-    st.sidebar.title("🍑 BonBon Peach")
+    st.sidebar.markdown("### 🍑 BonBon Peach")
+    st.sidebar.markdown("#### 📅 Rango de Fechas")
     hoy = datetime.date.today()
-    f_ini = st.sidebar.date_input("Inicio", hoy.replace(day=1))
-    f_fin = st.sidebar.date_input("Fin", hoy)
+    # Por defecto mostrar el mes actual
+    f_inicio = st.sidebar.date_input("Inicio", value=hoy.replace(day=1))
+    f_fin = st.sidebar.date_input("Fin", value=hoy)
+    st.sidebar.markdown("---")
     
-    opc = st.sidebar.radio("Navegación", 
-        ["📊 Dashboard", "🛒 Ventas", "🔄 Reposición", "📦 Inventario", "🧪 Ingredientes", "📝 Recetas", "💰 Precios"])
-    
-    st.sidebar.divider()
-    if st.sidebar.button("Cerrar Sesión"):
-        st.session_state.authenticated = False
-        st.rerun()
+    opcion = st.sidebar.radio("Navegación", ["📊 Dashboard", "🛒 Ventas", "🔄 Reposición", "📦 Inventario", "🧪 Ingredientes", "📝 Recetas", "💰 Precios"])
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Cerrar Sesión"): st.session_state.authenticated = False; st.rerun()
 
-    if opc == "📊 Dashboard": mostrar_dashboard(f_ini, f_fin)
-    elif opc == "🛒 Ventas": mostrar_ventas(f_ini, f_fin)
-    elif opc == "🔄 Reposición": mostrar_reposicion(f_ini, f_fin)
-    elif opc == "📦 Inventario": mostrar_inventario()
-    elif opc == "🧪 Ingredientes": mostrar_ingredientes()
-    elif opc == "📝 Recetas": mostrar_recetas()
-    elif opc == "💰 Precios": mostrar_precios()
+    if opcion == "📊 Dashboard": mostrar_dashboard(f_inicio, f_fin)
+    elif opcion == "🧪 Ingredientes": mostrar_ingredientes()
+    elif opcion == "📝 Recetas": mostrar_recetas()
+    elif opcion == "💰 Precios": mostrar_precios()
+    elif opcion == "🛒 Ventas": mostrar_ventas(f_inicio, f_fin)
+    elif opcion == "📦 Inventario": mostrar_inventario()
+    elif opcion == "🔄 Reposición": mostrar_reposicion(f_inicio, f_fin)
 
 if __name__ == "__main__":
     main()
