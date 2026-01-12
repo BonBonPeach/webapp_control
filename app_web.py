@@ -27,6 +27,15 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- HELPER: RUTAS RELATIVAS LOCALES ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ruta_ingredientes = os.path.join(BASE_DIR, "IngredientesBase.csv")
+ruta_recetas = os.path.join(BASE_DIR, "Recetas.csv")
+ruta_desglose_precios = os.path.join(BASE_DIR, "CostoPorProducto.csv")
+ruta_venta_diaria = os.path.join(BASE_DIR, "VentasDiarias.csv")
+ruta_inventario = os.path.join(BASE_DIR, "Inventario.csv")
+
 # --- CONSTANTES ---
 COMISION_BASE_PORCENTAJE = 3.5
 TASA_IVA_PORCENTAJE = 16.0
@@ -99,32 +108,44 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- FUNCIONES AUXILIARES ---
-def r2_read_csv(filename, encoding="latin-1"):
+def r2_read_csv(filename):
+    """Cargar CSV desde Cloudflare R2"""
     try:
-            url = f"{WORKER_URL}/{filename}"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
+        response = requests.get(f"{WORKER_URL}/{filename}")
+        if response.status_code == 200:
+            data = response.json()
+            if data:  # Ahora devuelve array directamente
                 return pd.DataFrame(data)
-            elif response.status_code == 404:
-                # Si el archivo no existe aún en el bucket R2, devolvemos un DataFrame vacío
-                return pd.DataFrame()
             else:
-                st.error(f"Error de API ({response.status_code}): {response.text}")
-                return pd.DataFrame()
+                return pd.DataFrame()  # Array vacío
+    except Exception as e:
+        st.error(f"Error cargando {filename}: {e}")
     except Exception as e:
             st.error(f"Error de conexión con el servidor R2: {e}")
             return pd.DataFrame()
 
-def r2_write_csv(df, filename, encoding="latin-1"):
-    csv_data = df.to_csv(index=False, encoding=encoding)
-    r = requests.put(
-        f"{WORKER_URL}/{filename}",
-        data=csv_data,
-        headers={"Content-Type": "text/csv"}
-    )
-    if r.status_code != 200:
-        raise Exception("Error writing file to R2")
+def r2_write_csv(df, filename):
+    """Guardar CSV en Cloudflare R2"""
+    try:
+        # Convertir DataFrame a lista de diccionarios
+        if not df.empty:
+            data = df.to_dict('records')
+        else:
+            data = []
+            
+        response = requests.post(
+            f"{WORKER_URL}/{filename}", 
+            json=data
+        )
+        if response.status_code == 200:
+            st.success("✅ Datos guardados correctamente")
+            return True
+        else:
+            st.error("❌ Error guardando datos")
+            return False
+    except Exception as e:
+        st.error(f"❌ Error guardando {filename}: {e}")
+        return False
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
@@ -301,7 +322,7 @@ def guardar_ventas(ventas_data):
 
     # Guardar de nuevo en R2
     r2_write_csv(df_final, R2_VENTAS)
-    
+
 def leer_precios_desglose():
     precios = {}
     try:
