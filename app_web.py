@@ -750,12 +750,14 @@ def mostrar_ventas(f_inicio, f_fin):
                                 inventario[ing]['stock_actual'] -= (cant_r * q)
                                 if inventario[ing]['stock_actual'] < 0: inventario[ing]['stock_actual'] = 0
                 
-                if os.path.exists(ruta_venta_diaria): df_old = pd.read_csv(ruta_venta_diaria, encoding='latin-1')
-                else: df_old = pd.DataFrame()
-                df_final = pd.concat([df_old, pd.DataFrame(ventas_nuevas)], ignore_index=True)
-                df_final.to_csv(ruta_venta_diaria, index=False, encoding='latin-1')
-                guardar_inventario_csv(inventario)
-                st.session_state.carrito = []; st.toast("✅ Venta registrada!"); st.rerun()
+            guardar_ventas(ventas_nuevas)
+            # Guardar inventario en R2
+            #guardar_inventario(inventario)
+
+            st.session_state.carrito = []
+            st.toast("✅ Venta registrada y guardada en la nube")
+            st.rerun()    
+            st.session_state.carrito = []; st.toast("✅ Venta registrada!"); st.rerun()
         else: st.info("Carrito vacío")
 
    with col_hist:
