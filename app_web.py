@@ -768,13 +768,13 @@ def mostrar_ventas(f_inicio, f_fin):
                             if ing in inventario:
                                 inventario[ing]['stock_actual'] -= (cant_r * q)
                                 if inventario[ing]['stock_actual'] < 0: inventario[ing]['stock_actual'] = 0
-            if guardar_ventas(ventas_nuevas):
-             guardar_inventario_csv(inventario)
-             st.session_state.carrito = []
-             st.toast("✅ Venta registrada y guardada en la nube")
-             st.rerun()
-            else:
-             st.error("❌ No se pudo guardar la venta") 
+                if guardar_ventas(ventas_nuevas):
+                 guardar_inventario_csv(inventario)
+                 st.session_state.carrito = []
+                 st.toast("✅ Venta registrada y guardada en la nube")
+                 st.rerun()
+                else:
+                 st.error("❌ No se pudo guardar la venta") 
         else: st.info("Carrito vacío")
 
    with col_hist:
