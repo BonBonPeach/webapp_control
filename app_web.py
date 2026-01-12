@@ -52,9 +52,16 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 USERS = {
-    "admin": hash_password("BonBonAdmin!"),
-    "ventas": hash_password("VentasBBP2025!")
+    "admin": {
+        "password": hash_password("BonBonAdmin!"),
+        "rol": "admin"
+    },
+    "ventas": {
+        "password": hash_password("ventas1"),
+        "rol": "vendedor"
+    }
 }
+
 
 def check_auth():
     if st.session_state.get("authenticated"):
@@ -73,8 +80,10 @@ def check_auth():
             username = st.text_input("Usuario")
             password = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Acceder", use_container_width=True):
-                if username in USERS and hash_password(password) == USERS[username]:
+                if username in USERS and hash_password(password) == USERS[username]["password"]:
                     st.session_state.authenticated = True
+                    st.session_state.rol = USERS[username]["rol"]
+                    st.session_state.usuario = username
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
@@ -669,6 +678,7 @@ def mostrar_ventas(f_inicio, f_fin):
    st.markdown('<div class="section-header">🛒 Terminal de Ventas</div>', unsafe_allow_html=True)
    ventas = leer_ventas(f_inicio, f_fin)
    col_pos, col_hist = st.columns([2, 3])
+   es_admin = st.session_state.get("rol") == "admin"
     
 # CORRECCIÓN: Convertir a DataFrame si es una lista, de lo contrario Pandas no funcionará
    if isinstance(ventas, list):
@@ -677,7 +687,7 @@ def mostrar_ventas(f_inicio, f_fin):
         ventas_df = ventas
 
     # --- Resumen Gráfico de Ventas (Donas) ---
-   if not ventas_df.empty:
+   if es_admin and not ventas_df.empty:
         st.subheader("📈 Resumen del Periodo Seleccionado")
         cg1, cg2 = st.columns(2)
         
@@ -783,7 +793,10 @@ def mostrar_ventas(f_inicio, f_fin):
         if ventas_hist:
             df_h = pd.DataFrame(ventas_hist)
             if 'Fecha_DT' in df_h.columns: df_h = df_h.sort_values('Fecha_DT', ascending=False)
-            st.dataframe(df_h[['Fecha', 'Producto', 'Cantidad', 'Total Venta Bruto', 'Forma Pago']], use_container_width=True, hide_index=True)
+            cols_admin = ['Fecha', 'Producto', 'Cantidad', 'Total Venta Bruto', 'Forma Pago']
+            cols_vendedor = ['Fecha', 'Producto', 'Cantidad', 'Forma Pago']
+            cols = cols_admin if es_admin else cols_vendedor
+            st.dataframe(df_h[cols], use_container_width=True, hide_index=True)
         else: st.info("No hay ventas en este rango.")
 
 def mostrar_inventario():
@@ -844,8 +857,18 @@ def main():
     f_inicio = st.sidebar.date_input("Inicio", value=hoy.replace(day=1))
     f_fin = st.sidebar.date_input("Fin", value=hoy)
     st.sidebar.markdown("---")
-    
-    opcion = st.sidebar.radio("Navegación", ["📊 Dashboard", "🛒 Ventas", "🔄 Reposición", "📦 Inventario", "🧪 Ingredientes", "📝 Recetas", "💰 Precios"])
+    st.sidebar.caption(f"👤 {st.session_state.usuario} ({st.session_state.rol})")
+
+    rol = st.session_state.get("rol", "vendedor")
+
+    if rol == "vendedor":
+        opcion = "🛒 Ventas"
+    else:
+        opcion = st.sidebar.radio(
+            "Navegación",
+            ["📊 Dashboard", "🛒 Ventas", "🔄 Reposición", "📦 Inventario", "🧪 Ingredientes", "📝 Recetas", "💰 Precios"]
+        )
+
     st.sidebar.markdown("---")
     if st.sidebar.button("Cerrar Sesión"): st.session_state.authenticated = False; st.rerun()
 
