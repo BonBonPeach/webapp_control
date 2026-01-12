@@ -16,7 +16,7 @@ WORKER_URL = "https://admin.bonbon-peach.com/api"
 R2_INGREDIENTES = "IngredientesBase.csv"
 R2_RECETAS = "Recetas.csv"
 R2_PRECIOS = "CostoPorProducto.csv"
-R2_VENTAS = "VentasDiarias.csv"
+R2_VENTAS = "VentasDiarias"
 R2_INVENTARIO = "Inventario.csv"
 
 
