@@ -2,6 +2,7 @@ import requests
 import streamlit as st
 import hashlib
 import pandas as pd
+import time
 import os
 import unicodedata
 import re
@@ -18,6 +19,8 @@ R2_PRECIOS = "CostoPorProducto"
 R2_VENTAS = "VentasDiarias"
 R2_INVENTARIO = "Inventario"
 
+USERS = st.secrets["users"]
+
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -27,18 +30,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- HELPER: RUTAS RELATIVAS LOCALES ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ruta_ingredientes = os.path.join(BASE_DIR, "IngredientesBase.csv")
-ruta_recetas = os.path.join(BASE_DIR, "Recetas.csv")
-ruta_desglose_precios = os.path.join(BASE_DIR, "CostoPorProducto.csv")
-ruta_venta_diaria = os.path.join(BASE_DIR, "VentasDiarias.csv")
-ruta_inventario = os.path.join(BASE_DIR, "Inventario.csv")
 
 # --- CONSTANTES ---
 COMISION_BASE_PORCENTAJE = 3.5
 TASA_IVA_PORCENTAJE = 16.0
 COMISION_TARJETA = COMISION_BASE_PORCENTAJE * (1 + (TASA_IVA_PORCENTAJE / 100))
+SESSION_TIMEOUT_MIN = 5  # minutos (ajusta a gusto)
 
 # --- DICCIONARIOS PARA TRADUCCIÓN DE FECHAS ---
 DIAS_ESP = {
@@ -51,43 +48,48 @@ ORDEN_DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-USERS = {
-    "admin": {
-        "password": hash_password("BonBonAdmin!"),
-        "rol": "admin"
-    },
-    "ventas": {
-        "password": hash_password("ventas1"),
-        "rol": "vendedor"
-    }
-}
 
 
 def check_auth():
+    now = time.time()
+    if not check_auth():
+     st.stop()
+    # Si ya está autenticado, validar timeout
     if st.session_state.get("authenticated"):
+        last_activity = st.session_state.get("last_activity", now)
+
+        # ⏱️ Expiración por inactividad
+        if now - last_activity > SESSION_TIMEOUT_MIN * 60:
+            st.session_state.clear()
+            st.warning("⏱️ Sesión expirada por inactividad")
+            st.rerun()
+
+        # Actualizar actividad
+        st.session_state.last_activity = now
         return True
-    
-    st.markdown("""
-    <div style='text-align: center; padding: 50px 20px;'>
-        <h1 style='color: #F1B48B;'>🍑 BonBon - Peach</h1>
-        <p style='color: #666;'>Sistema de Gestión Integral</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        with st.form("login"):
-            username = st.text_input("Usuario")
-            password = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Acceder", use_container_width=True):
-                if username in USERS and hash_password(password) == USERS[username]["password"]:
-                    st.session_state.authenticated = True
-                    st.session_state.rol = USERS[username]["rol"]
-                    st.session_state.usuario = username
-                    st.rerun()
-                else:
-                    st.error("Credenciales incorrectas")
+
+    # ---- LOGIN ----
+    st.title("🔐 Inicio de sesión")
+
+    with st.form("login"):
+        username = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        submit = st.form_submit_button("Ingresar")
+
+    if submit:
+        if username in USERS:
+            if hash_password(password) == USERS[username]["password"]:
+                st.session_state.authenticated = True
+                st.session_state.usuario = username
+                st.session_state.rol = USERS[username]["rol"]
+                st.session_state.last_activity = now
+                st.rerun()
+
+        st.error("Usuario o contraseña incorrectos")
+
     return False
+
+
 
 # --- ESTILOS CSS ---
 st.markdown("""
