@@ -193,10 +193,11 @@ def leer_ingredientes_base():
     
     try:
             df = r2_read_csv(R2_INGREDIENTES)
+            df.columns = df.columns.str.strip()
             for _, fila in df.iterrows():
                 nombre = str(fila.get('Ingrediente', '')).strip()
                 if not nombre: continue
-                costo_compra = clean_and_convert_float(fila.get(' Costo de Compra ', '0'))
+                costo_compra = clean_and_convert_float(fila.get('Costo de Compra', 0))
                 cantidad_compra = clean_and_convert_float(fila.get('Cantidad por Unidad de Compra', '0'))
                 costo_receta = clean_and_convert_float(fila.get('Costo por Unidad Receta', '0'))
                 
