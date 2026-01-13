@@ -220,7 +220,7 @@ def guardar_ingredientes_base(ingredientes_data):
             datos.append({
                 'Ingrediente': ing['nombre'], 'Proveedor': ing['proveedor'],
                 'Unidad de Compra': ing['unidad_compra'],
-                ' Costo de Compra ': f"{ing.get('costo_compra', 0.0):.2f}",
+                'Costo de Compra': f"{ing.get('costo_compra', 0.0):.2f}",
                 'Cantidad por Unidad de Compra': f"{ing.get('cantidad_compra', 0.0)}",
                 'Unidad Receta': ing['unidad_receta'],
                 'Costo por Unidad Receta': f"{ing.get('costo_receta', 0.0):.4f}"
