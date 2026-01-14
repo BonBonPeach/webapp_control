@@ -355,7 +355,7 @@ def leer_precios_desglose():
                     'margen_porc': clean_and_convert_float(row.get('Margen Bruto (%)'))
                 }
     except Exception as e:
-    st.error(f"Error leyendo precios: {e}")
+     st.error(f"Error leyendo precios: {e}")
     return precios
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
