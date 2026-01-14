@@ -215,32 +215,33 @@ def leer_ingredientes_base():
     return ingredientes
 
 def guardar_ingredientes_base(df):
-    df = df.copy()
+    try:
+        df = df.copy()
 
-    # Limpieza final
-    df.columns = df.columns.str.strip()
-    df = df.fillna("")
+        # Limpieza final
+        df.columns = df.columns.str.strip()
+        df = df.fillna("")
 
-    csv_buffer = io.StringIO()
-    df.to_csv(csv_buffer, index=False)
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
 
-    response = requests.put(
-        f"{WORKER_URL}/IngredientesBase.csv",
-        data=csv_buffer.getvalue(),
-        headers={"Content-Type": "text/csv"},
-        timeout=10
-    )
+        response = requests.put(
+            f"{WORKER_URL}/IngredientesBase.csv",
+            data=csv_buffer.getvalue(),
+            headers={"Content-Type": "text/csv"},
+            timeout=10
+        )
 
-    if response.status_code != 200:
-        st.error("❌ Error al guardar IngredientesBase")
-    else:
+        if response.status_code != 200:
+            st.error("❌ Error al guardar IngredientesBase")
+            return False
+
         st.success("✅ IngredientesBase guardado correctamente")
-
-        r2_write_csv(pd.DataFrame(datos), R2_INGREDIENTES)
         st.cache_data.clear()
         return True
+
     except Exception as e:
-        st.error(f"Error guardando ingredientes: {e}")
+        st.error(f"❌ Error guardando ingredientes: {e}")
         return False
 
 def leer_inventario():
