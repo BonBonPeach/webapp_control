@@ -48,8 +48,6 @@ ORDEN_DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-
-
 def check_auth():
     now = time.time()
     # Si ya está autenticado, validar timeout
@@ -115,12 +113,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def r2_read_csv(filename):
+def r2_read_csv(endpoint):
+    """
+    Lee datos desde Cloudflare Worker (JSON)
+    y los devuelve como DataFrame (compatibilidad CSV)
+    """
     try:
         r = requests.get(f"{WORKER_URL}/api/{endpoint}", timeout=10)
         r.raise_for_status()
 
         data = r.json()
+
         if not data:
             return pd.DataFrame()
 
@@ -130,28 +133,32 @@ def r2_read_csv(filename):
         st.error(f"❌ Error de conexión con R2 ({endpoint}): {e}")
         return pd.DataFrame()
 
-def r2_write_csv(df, filename):
-    """Guardar CSV en Cloudflare R2"""
+def r2_write_csv(df, endpoint):
+    """
+    Guarda un DataFrame en R2 vía Worker (JSON)
+    """
     try:
-        # Convertir DataFrame a lista de diccionarios
-        if not df.empty:
-            data = df.to_dict('records')
+        if isinstance(df, pd.DataFrame):
+            data = df.to_dict(orient="records")
         else:
-            data = []
-            
-        response = requests.post(
-            f"{WORKER_URL}/{filename}", 
-            json=data
+            data = df
+
+        r = requests.post(
+            f"{WORKER_URL}/api/{endpoint}",
+            json=data,
+            timeout=10
         )
-        if response.status_code == 200:
-            st.success("✅ Datos guardados correctamente")
+
+        if r.status_code == 200:
             return True
         else:
-            st.error("❌ Error guardando datos")
+            st.error(f"❌ Error guardando {endpoint}: {r.text}")
             return False
+
     except Exception as e:
-        st.error(f"❌ Error guardando {filename}: {e}")
+        st.error(f"❌ Error guardando {endpoint}: {e}")
         return False
+
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
@@ -199,32 +206,22 @@ def leer_ingredientes_base():
     except Exception as e: st.error(f"Error ingredientes: {e}")
     return ingredientes
 
-def guardar_ingredientes_base(df):
+def guardar_ingredientes_base(ingredientes):
     try:
-        df = df.copy()
-        df.columns = df.columns.str.strip()
-        df = df.fillna("")
+        df = pd.DataFrame(ingredientes)
+        ok = r2_write_csv(df, R2_INGREDIENTES)
 
-        data = df.to_dict(orient="records")
-
-        response = requests.put(
-            f"{WORKER_URL}/api/ingredientes",
-            json=data,
-            timeout=10
-        )
-
-        if response.status_code != 200:
+        if ok:
+            st.success("✅ IngredientesBase guardado correctamente")
+            st.cache_data.clear()
+            return True
+        else:
             st.error("❌ Error al guardar IngredientesBase")
             return False
-
-        st.success("✅ IngredientesBase guardado correctamente")
-        st.cache_data.clear()
-        return True
 
     except Exception as e:
         st.error(f"❌ Error guardando ingredientes: {e}")
         return False
-
 
 def leer_inventario():
     inventario = {}
@@ -347,35 +344,6 @@ def leer_ventas(fecha_inicio=None, fecha_fin=None):
     return ventas
 
 
-    encabezados = ['Fecha', 'Producto', 'Cantidad', 'Precio Unitario', 'Total Venta Bruto', 
-                   'Descuento (%)', 'Descuento ($)', 'Costo Total', 'Ganancia Bruta', 
-                   'Comision ($)', 'Ganancia Neta', 'Forma Pago']
-   # 1️⃣ Leer ventas actuales desde R2
-    df_actual = r2_read_csv(R2_VENTAS)
-
-    if df_actual.empty:
-        df_actual = pd.DataFrame(ventas_nuevas)
-    else:
-        df_nuevas = pd.DataFrame(ventas_nuevas)
-        df_actual = pd.concat([df_actual, df_nuevas], ignore_index=True)
-
-    # 2️⃣ Normalizar columnas (evita errores silenciosos)
-    df_actual.columns = [c.strip() for c in df_actual.columns]
-
-    # 3️⃣ Convertir a JSON (formato esperado por el Worker)
-    data_json = df_actual.to_dict(orient="records")
-
-    # 4️⃣ Subir nuevamente a R2
-    response = requests.put(
-        f"{WORKER_URL}/{R2_VENTAS}",
-        json=data_json
-    )
-
-    if response.status_code != 200:
-        st.error(f"❌ Error al guardar ventas en R2: {response.text}")
-    else:
-        st.success("✅ Venta guardada correctamente")
-
 def leer_precios_desglose():
     precios = {}
     try:
@@ -386,7 +354,8 @@ def leer_precios_desglose():
                     'margen': clean_and_convert_float(row.get('Margen Bruto')),
                     'margen_porc': clean_and_convert_float(row.get('Margen Bruto (%)'))
                 }
-    except: pass
+    except Exception as e:
+    st.error(f"Error leyendo precios: {e}")
     return precios
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
