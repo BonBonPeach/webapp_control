@@ -290,16 +290,16 @@ def guardar_inventario(inventario_data):
 # ===============================
 # VENTAS
 # ===============================
-def leer_ventas(f_ini=None, f_fin=None):
-    df = api_read(R2_VENTAS)
-    if df.empty or "Fecha" not in df.columns:
+def leer_ventas(fecha_inicio=None, fecha_fin=None):
+    df = api_read("ventas")
+
+    if df.empty:
         return []
 
-    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], format="%d/%m/%Y", errors="coerce")
-    df = df.dropna(subset=["Fecha_DT"])
-
-    if f_ini and f_fin:
-        df = df[(df["Fecha_DT"].dt.date >= f_ini) & (df["Fecha_DT"].dt.date <= f_fin)]
+    if fecha_inicio:
+        df = df[df["Fecha"] >= fecha_inicio]
+    if fecha_fin:
+        df = df[df["Fecha"] <= fecha_fin]
 
     return df.to_dict("records")
 
