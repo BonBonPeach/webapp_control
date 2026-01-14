@@ -214,19 +214,28 @@ def leer_ingredientes_base():
     except Exception as e: st.error(f"Error ingredientes: {e}")
     return ingredientes
 
-def guardar_ingredientes_base(ingredientes_data):
-    try:
-        datos = []
-        for ing in sorted(ingredientes_data, key=lambda x: x['nombre']):
-            datos.append({
-                'Ingrediente': ing['nombre'], 'Proveedor': ing['proveedor'],
-                'Unidad de Compra': ing['unidad_compra'],
-                'Costo de Compra': f"{ing.get('costo_compra', 0.0):.2f}",
-                'Cantidad por Unidad de Compra': f"{ing.get('cantidad_compra', 0.0)}",
-                'Unidad Receta': ing['unidad_receta'],
-                'Costo por Unidad Receta': f"{ing.get('costo_receta', 0.0):.4f}"
-            })
-        
+def guardar_ingredientes_base(df):
+    df = df.copy()
+
+    # Limpieza final
+    df.columns = df.columns.str.strip()
+    df = df.fillna("")
+
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+
+    response = requests.put(
+        f"{WORKER_URL}/IngredientesBase.csv",
+        data=csv_buffer.getvalue(),
+        headers={"Content-Type": "text/csv"},
+        timeout=10
+    )
+
+    if response.status_code != 200:
+        st.error("❌ Error al guardar IngredientesBase")
+    else:
+        st.success("✅ IngredientesBase guardado correctamente")
+
         r2_write_csv(pd.DataFrame(datos), R2_INGREDIENTES)
         st.cache_data.clear()
         return True
