@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from io import StringIO, BytesIO
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
-API_KEY = st.secrets["API_KEY"]
+API_KEY=st.secrets["API_KEY"]
 
 R2_INGREDIENTES = "ingredientes"
 R2_RECETAS = "recetas"
