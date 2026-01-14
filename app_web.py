@@ -116,33 +116,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def r2_read_csv(filename):
-    """Cargar CSV desde Cloudflare R2 (Worker devuelve JSON)"""
     try:
-        response = requests.get(f"{WORKER_URL}/{filename}", timeout=10)
-
-        if response.status_code != 200:
-            st.error(f"❌ Error HTTP {response.status_code} al leer {filename}")
-            return pd.DataFrame()
+        response = requests.get(f"{WORKER_URL}/api/{endpoint}", timeout=10)
+        response.raise_for_status()
 
         data = response.json()
-
         if not data:
             return pd.DataFrame()
 
-        df = pd.DataFrame(data)
-        df.columns = [c.strip() for c in df.columns]
-        return df
-
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error de conexión con R2 ({filename}): {e}")
-        return pd.DataFrame()
-
-    except ValueError as e:
-        st.error(f"❌ Error parseando JSON de {filename}: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(data)
 
     except Exception as e:
-        st.error(f"❌ Error inesperado leyendo {filename}: {e}")
+        st.error(f"❌ Error de conexión con R2 ({endpoint}): {e}")
         return pd.DataFrame()
 
 def r2_write_csv(df, filename):
@@ -217,18 +202,14 @@ def leer_ingredientes_base():
 def guardar_ingredientes_base(df):
     try:
         df = df.copy()
-
-        # Limpieza final
         df.columns = df.columns.str.strip()
         df = df.fillna("")
 
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
+        data = df.to_dict(orient="records")
 
         response = requests.put(
-            f"{WORKER_URL}/IngredientesBase.csv",
-            data=csv_buffer.getvalue(),
-            headers={"Content-Type": "text/csv"},
+            f"{WORKER_URL}/api/ingredientes",
+            json=data,
             timeout=10
         )
 
@@ -243,6 +224,7 @@ def guardar_ingredientes_base(df):
     except Exception as e:
         st.error(f"❌ Error guardando ingredientes: {e}")
         return False
+
 
 def leer_inventario():
     inventario = {}
