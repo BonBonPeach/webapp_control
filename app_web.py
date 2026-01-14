@@ -16,7 +16,7 @@ WORKER_URL = "https://admin.bonbon-peach.com/api"
 R2_INGREDIENTES = "IngredientesBase"
 R2_RECETAS = "Recetas"
 R2_PRECIOS = "CostoPorProducto"
-R2_VENTAS = "VentasDiarias.csv"
+R2_VENTAS = "VentasDiarias"
 R2_INVENTARIO = "Inventario"
 
 USERS = st.secrets["users"]
@@ -117,10 +117,10 @@ st.markdown("""
 
 def r2_read_csv(filename):
     try:
-        response = requests.get(f"{WORKER_URL}/api/{endpoint}", timeout=10)
-        response.raise_for_status()
+        r = requests.get(f"{WORKER_URL}/api/{endpoint}", timeout=10)
+        r.raise_for_status()
 
-        data = response.json()
+        data = r.json()
         if not data:
             return pd.DataFrame()
 
