@@ -115,7 +115,11 @@ st.markdown("""
 
 def api_read(endpoint):
     try:
-        r = requests.get(f"{WORKER_URL}/{endpoint}", timeout=10)
+        r = requests.get(
+            f"{WORKER_URL}/{endpoint}",
+            headers={"X-API-Key": API_KEY},
+            timeout=10
+         )
         r.raise_for_status()
         data = r.json()
         if not isinstance(data, list):
@@ -128,7 +132,13 @@ def api_read(endpoint):
 def api_write(endpoint, data):
     try:
         payload = data.to_dict("records") if isinstance(data, pd.DataFrame) else data
-        r = requests.put(f"{WORKER_URL}/{endpoint}", json=payload, timeout=10)
+        r = requests.put(
+            f"{WORKER_URL}/{endpoint}",
+            json=payload,
+            headers={"X-API-Key": API_KEY},
+            timeout=10
+        )
+
         r.raise_for_status()
         st.cache_data.clear()
         return True
