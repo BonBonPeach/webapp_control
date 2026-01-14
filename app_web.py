@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import StringIO, BytesIO
 
-WORKER_URL = "https://admin.bonbon-peach.com"
+WORKER_URL = "https://admin.bonbon-peach.com/api"
 
 R2_INGREDIENTES = "IngredientesBase"
 R2_RECETAS = "Recetas"
@@ -113,52 +113,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def r2_read_csv(endpoint):
-    """
-    Lee datos desde Cloudflare Worker (JSON)
-    y los devuelve como DataFrame (compatibilidad CSV)
-    """
+def api_read(endpoint):
     try:
-        r = requests.get(f"{WORKER_URL}/api/{endpoint}", timeout=10)
+        r = requests.get(f"{WORKER_URL}/{endpoint}", timeout=10)
         r.raise_for_status()
-
         data = r.json()
-
-        if not data:
+        if not isinstance(data, list):
             return pd.DataFrame()
-
         return pd.DataFrame(data)
-
     except Exception as e:
         st.error(f"❌ Error de conexión con R2 ({endpoint}): {e}")
         return pd.DataFrame()
 
-def r2_write_csv(df, endpoint):
-    """
-    Guarda un DataFrame en R2 vía Worker (JSON)
-    """
+def api_write(endpoint, data):
     try:
-        if isinstance(df, pd.DataFrame):
-            data = df.to_dict(orient="records")
-        else:
-            data = df
-
-        r = requests.post(
-            f"{WORKER_URL}/api/{endpoint}",
-            json=data,
-            timeout=10
-        )
-
-        if r.status_code == 200:
-            return True
-        else:
-            st.error(f"❌ Error guardando {endpoint}: {r.text}")
-            return False
-
+        payload = data.to_dict("records") if isinstance(data, pd.DataFrame) else data
+        r = requests.put(f"{WORKER_URL}/{endpoint}", json=payload, timeout=10)
+        r.raise_for_status()
+        st.cache_data.clear()
+        return True
     except Exception as e:
         st.error(f"❌ Error guardando {endpoint}: {e}")
         return False
-
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
@@ -180,213 +156,217 @@ def clean_and_convert_float(value_str, default=0.0):
 
 # --- GESTIÓN DE DATOS ---
 #@st.cache_data
+# ===============================
+# INGREDIENTES
+# ===============================
 def leer_ingredientes_base():
+    df = api_read(R2_INGREDIENTES)
     ingredientes = []
-    
-    try:
-            df = r2_read_csv(R2_INGREDIENTES)
-            df.columns = df.columns.str.strip()
-            for _, fila in df.iterrows():
-                nombre = str(fila.get('Ingrediente', '')).strip()
-                if not nombre: continue
-                costo_compra = clean_and_convert_float(fila.get('Costo de Compra', 0))
-                cantidad_compra = clean_and_convert_float(fila.get('Cantidad por Unidad de Compra', '0'))
-                costo_receta = clean_and_convert_float(fila.get('Costo por Unidad Receta', '0'))
-                
-                if cantidad_compra != 0 and costo_receta == 0:
-                    costo_receta = costo_compra / cantidad_compra
-                
-                ingredientes.append({
-                    'nombre': nombre, 'proveedor': str(fila.get('Proveedor', '')).strip(),
-                    'costo_compra': costo_compra, 'cantidad_compra': cantidad_compra,
-                    'unidad_compra': str(fila.get('Unidad de Compra', '')).strip(),
-                    'unidad_receta': str(fila.get('Unidad Receta', '')).strip(),
-                    'costo_receta': costo_receta, 'nombre_normalizado': normalizar_texto(nombre)
-                })
-    except Exception as e: st.error(f"Error ingredientes: {e}")
+    for _, r in df.iterrows():
+        if not r.get("Ingrediente"):
+            continue
+        ingredientes.append({
+            "nombre": r["Ingrediente"],
+            "proveedor": r.get("Proveedor", ""),
+            "unidad_compra": r.get("Unidad de Compra", ""),
+            "costo_compra": clean_and_convert_float(r.get("Costo de Compra")),
+            "cantidad_compra": clean_and_convert_float(r.get("Cantidad por Unidad de Compra")),
+            "unidad_receta": r.get("Unidad Receta", ""),
+            "costo_receta": clean_and_convert_float(r.get("Costo por Unidad Receta")),
+            "nombre_normalizado": normalizar_texto(r["Ingrediente"])
+        })
     return ingredientes
 
-def guardar_ingredientes_base(ingredientes):
-    try:
-        df = pd.DataFrame(ingredientes)
-        ok = r2_write_csv(df, R2_INGREDIENTES)
+def guardar_ingredientes_base(data):
+    df = pd.DataFrame([{
+        "Ingrediente": i["nombre"],
+        "Proveedor": i["proveedor"],
+        "Unidad de Compra": i["unidad_compra"],
+        "Costo de Compra": i["costo_compra"],
+        "Cantidad por Unidad de Compra": i["cantidad_compra"],
+        "Unidad Receta": i["unidad_receta"],
+        "Costo por Unidad Receta": i["costo_receta"],
+    } for i in data])
+    return api_write(R2_INGREDIENTES, df)
 
-        if ok:
-            st.success("✅ IngredientesBase guardado correctamente")
-            st.cache_data.clear()
-            return True
-        else:
-            st.error("❌ Error al guardar IngredientesBase")
-            return False
+# ===============================
+# RECETAS
+# ===============================
+def leer_recetas():
+    df = api_read(R2_RECETAS)
+    recetas = {}
+    if df.empty or "Ingrediente" not in df.columns:
+        return recetas
 
-    except Exception as e:
-        st.error(f"❌ Error guardando ingredientes: {e}")
-        return False
+    productos = [c for c in df.columns if c != "Ingrediente"]
+    for p in productos:
+        recetas[p] = {"ingredientes": {}, "costo_total": 0}
+
+    ingredientes = leer_ingredientes_base()
+
+    for _, r in df.iterrows():
+        ing = r["Ingrediente"]
+        for p in productos:
+            cant = clean_and_convert_float(r[p])
+            if cant > 0:
+                recetas[p]["ingredientes"][ing] = cant
+
+    for p in recetas:
+        for ing, c in recetas[p]["ingredientes"].items():
+            info = next((i for i in ingredientes if i["nombre"] == ing), None)
+            if info:
+                recetas[p]["costo_total"] += info["costo_receta"] * c
+
+    return recetas
+
+def guardar_recetas(recetas):
+    ingredientes = sorted({i for r in recetas.values() for i in r["ingredientes"]})
+    data = []
+    for ing in ingredientes:
+        fila = {"Ingrediente": ing}
+        for p in recetas:
+            fila[p] = recetas[p]["ingredientes"].get(ing, "")
+        data.append(fila)
+    return api_write(R2_RECETAS, pd.DataFrame(data))
+
+# ===============================
+# INVENTARIO
+# ===============================
 
 def leer_inventario():
     inventario = {}
     try:
-            df = r2_read_csv(R2_INVENTARIO)
-            for _, fila in df.iterrows():
-                nombre = str(fila.get('Ingrediente', '')).strip()
-                if nombre:
-                    inventario[nombre] = {
-                        'stock_actual': clean_and_convert_float(fila.get('Stock Actual', '0')),
-                        'min': clean_and_convert_float(fila.get('Stock Mínimo', '0')),
-                        'max': clean_and_convert_float(fila.get('Stock Máximo', '0'))
-                    }
-    except Exception: pass
+        df = api_read(R2_INVENTARIO)
+
+        if df.empty:
+            return inventario
+
+        for _, fila in df.iterrows():
+            nombre = str(fila.get('Ingrediente', '')).strip()
+            if not nombre:
+                continue
+
+            inventario[nombre] = {
+                'stock_actual': clean_and_convert_float(fila.get('Stock Actual')),
+                'min': clean_and_convert_float(fila.get('Stock Mínimo')),
+                'max': clean_and_convert_float(fila.get('Stock Máximo'))
+            }
+
+    except Exception as e:
+        st.error(f"Error leyendo inventario: {e}")
+
     return inventario
 
-def guardar_inventario_csv(inventario_data):
+def guardar_inventario(inventario_data):
     try:
         datos = []
+
         for nombre, data in inventario_data.items():
             datos.append({
                 'Ingrediente': nombre,
-                'Stock Actual': f"{data.get('stock_actual', 0.0):.4f}",
-                'Stock Mínimo': f"{data.get('min', 0.0):.4f}",
-                'Stock Máximo': f"{data.get('max', 0.0):.4f}"
+                'Stock Actual': round(data.get('stock_actual', 0.0), 4),
+                'Stock Mínimo': round(data.get('min', 0.0), 4),
+                'Stock Máximo': round(data.get('max', 0.0), 4),
             })
-        r2_write_csv(pd.DataFrame(datos), R2_INVENTARIO)
-    except Exception as e: st.error(f"Error guardando inventario: {e}")
 
-#@st.cache_data
-def leer_recetas():
-    recetas = {}
-    ingredientes = leer_ingredientes_base()
-    try:
-            df = r2_read_csv(R2_RECETAS)
-            if not df.empty and 'Ingrediente' in df.columns:
-                productos = [col for col in df.columns if col != 'Ingrediente']
-                for p in productos: recetas[p] = {'ingredientes': {}, 'costo_total': 0.0}
-                
-                for _, fila in df.iterrows():
-                    ing_nombre = str(fila['Ingrediente']).strip()
-                    if not ing_nombre: continue
-                    for p in productos:
-                        if p in fila:
-                            cant = clean_and_convert_float(fila[p])
-                            if cant > 0: recetas[p]['ingredientes'][ing_nombre] = cant
-                
-                for p, datos in recetas.items():
-                    costo = 0.0
-                    for ing_nom, cant in datos['ingredientes'].items():
-                        ing_info = next((i for i in ingredientes if i['nombre'] == ing_nom), None)
-                        if ing_info: costo += ing_info['costo_receta'] * cant
-                    recetas[p]['costo_total'] = costo
-    except Exception as e: st.error(f"Error recetas: {e}")
-    return recetas
-
-def guardar_recetas_csv(recetas_data):
-    try:
-        todos_ings = set()
-        for r in recetas_data.values(): todos_ings.update(r['ingredientes'].keys())
-        todos_ings = sorted(list(todos_ings))
-        nombres_prod = sorted(recetas_data.keys())
-        
-        data = []
-        for ing in todos_ings:
-            fila = {'Ingrediente': ing}
-            for prod in nombres_prod:
-                fila[prod] = recetas_data[prod]['ingredientes'].get(ing, '')
-            data.append(fila)
-        r2_write_csv(pd.DataFrame(data), R2_RECETAS)
-        st.cache_data.clear()
-    except Exception as e: st.error(f"Error guardando recetas: {e}")
-
-def guardar_ventas(ventas_data):
-    if not ventas_data:
-        return False
-
-    try:
-        # 1️⃣ Leer ventas actuales desde R2
-        df_actual = r2_read_csv(R2_VENTAS)
-
-        # 2️⃣ Convertir nuevas ventas a DF
-        df_nuevas = pd.DataFrame(ventas_data)
-
-        # 3️⃣ Concatenar
-        if df_actual.empty:
-            df_final = df_nuevas
-        else:
-            df_final = pd.concat([df_actual, df_nuevas], ignore_index=True)
-
-        # 4️⃣ Normalizar columnas
-        df_final.columns = [c.strip() for c in df_final.columns]
-
-        # 5️⃣ Guardar en R2
-        return r2_write_csv(df_final, R2_VENTAS)
+        df = pd.DataFrame(datos)
+        return api_write(R2_INVENTARIO, df)
 
     except Exception as e:
-        st.error(f"❌ Error guardando ventas: {e}")
+        st.error(f"Error guardando inventario: {e}")
         return False
+        
+# ===============================
+# VENTAS
+# ===============================
+def leer_ventas(f_ini=None, f_fin=None):
+    df = api_read(R2_VENTAS)
+    if df.empty or "Fecha" not in df.columns:
+        return []
 
-def leer_ventas(fecha_inicio=None, fecha_fin=None):
-    ventas = []
-    try:
-            df = r2_read_csv(R2_VENTAS)
-            if not df.empty and 'Fecha' in df.columns:
-                df['Fecha_DT'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
-                df = df.dropna(subset=['Fecha_DT'])
-                
-                if fecha_inicio and fecha_fin:
-                    mask = (df['Fecha_DT'].dt.date >= fecha_inicio) & (df['Fecha_DT'].dt.date <= fecha_fin)
-                    df = df.loc[mask]
-                
-                numeric_cols = ['Total Venta Bruto', 'Ganancia Neta', 'Cantidad', 'Comision ($)', 'Descuento ($)']
-                for col in numeric_cols:
-                    if col in df.columns:
-                         if df[col].dtype == 'object':
-                             df[col] = df[col].astype(str).str.replace(',', '', regex=False).str.replace('$', '', regex=False).astype(float)
-                ventas = df.to_dict('records')
-    except Exception as e: st.error(f"Error lectura ventas: {e}")
-    return ventas
+    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], format="%d/%m/%Y", errors="coerce")
+    df = df.dropna(subset=["Fecha_DT"])
 
+    if f_ini and f_fin:
+        df = df[(df["Fecha_DT"].dt.date >= f_ini) & (df["Fecha_DT"].dt.date <= f_fin)]
+
+    return df.to_dict("records")
+
+def guardar_ventas(nuevas):
+    df_actual = api_read(R2_VENTAS)
+    df_nuevo = pd.DataFrame(nuevas)
+    df = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo])
+    return api_write(R2_VENTAS, df)
 
 def leer_precios_desglose():
     precios = {}
     try:
-            df = r2_read_csv(R2_PRECIOS)
-            for _, row in df.iterrows():
-                precios[row['Producto']] = {
-                    'precio_venta': clean_and_convert_float(row.get('Precio Venta')),
-                    'margen': clean_and_convert_float(row.get('Margen Bruto')),
-                    'margen_porc': clean_and_convert_float(row.get('Margen Bruto (%)'))
-                }
+        df = api_read(R2_PRECIOS)
+
+        if df.empty:
+            return precios
+
+        for _, row in df.iterrows():
+            producto = str(row.get('Producto', '')).strip()
+            if not producto:
+                continue
+
+            precios[producto] = {
+                'precio_venta': clean_and_convert_float(row.get('Precio Venta')),
+                'margen': clean_and_convert_float(row.get('Margen Bruto')),
+                'margen_porc': clean_and_convert_float(row.get('Margen Bruto (%)'))
+            }
+
     except Exception as e:
-     st.error(f"Error leyendo precios: {e}")
+        st.error(f"Error leyendo precios: {e}")
+
     return precios
+
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
     ventas = leer_ventas(fecha_inicio, fecha_fin)
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
+
     ingredientes_utilizados = {}
-    
+
     for venta in ventas:
         producto = venta.get('Producto')
         cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
+
         if producto in recetas:
             for ing_nom, cant_receta in recetas[producto]['ingredientes'].items():
                 total_ing = cant_receta * cantidad_vendida
-                ingredientes_utilizados[ing_nom] = ingredientes_utilizados.get(ing_nom, 0) + total_ing
-    
+                ingredientes_utilizados[ing_nom] = (
+                    ingredientes_utilizados.get(ing_nom, 0) + total_ing
+                )
+
     resultado = []
+
     for ing_nom, cant_necesaria in ingredientes_utilizados.items():
-        if cant_necesaria <= 0: continue
+        if cant_necesaria <= 0:
+            continue
+
         info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
-        if info:
-            cant_compra = info['cantidad_compra']
-            porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
-            costo_reposicion = cant_necesaria * info['costo_receta']
-            resultado.append({
-                'Ingrediente': ing_nom, 'Cantidad Necesaria': cant_necesaria,
-                'Unidad': info['unidad_receta'], 'Costo Compra Base': info['costo_compra'],
-                'Proveedor': info['proveedor'], '% Unidad Compra': porcentaje,
-                'Costo Reposición': costo_reposicion
-            })
+        if not info:
+            continue
+
+        cant_compra = info['cantidad_compra']
+        porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
+        costo_reposicion = cant_necesaria * info['costo_receta']
+
+        resultado.append({
+            'Ingrediente': ing_nom,
+            'Cantidad Necesaria': cant_necesaria,
+            'Unidad': info['unidad_receta'],
+            'Costo Compra Base': info['costo_compra'],
+            'Proveedor': info['proveedor'],
+            '% Unidad Compra': porcentaje,
+            'Costo Reposición': costo_reposicion
+        })
+
     return sorted(resultado, key=lambda x: x['Ingrediente'])
+
 
 # --- PESTAÑAS Y VISTAS ---
 
@@ -553,7 +533,7 @@ def mostrar_recetas():
         if st.button("Crear Receta") and nuevo_nom:
             if nuevo_nom not in recetas:
                 recetas[nuevo_nom] = {'ingredientes': {}, 'costo_total': 0.0}
-                guardar_recetas_csv(recetas); st.success(f"Creada {nuevo_nom}"); st.rerun()
+                guardar_recetas(recetas); st.success(f"Creada {nuevo_nom}"); st.rerun()
         st.divider()
         sel_receta = st.radio("Seleccionar Receta:", list(recetas.keys()))
         
@@ -571,7 +551,7 @@ def mostrar_recetas():
                 
                 to_del = st.selectbox("Eliminar ingrediente:", [""] + list(datos['ingredientes'].keys()))
                 if st.button("Eliminar") and to_del:
-                    del recetas[sel_receta]['ingredientes'][to_del]; guardar_recetas_csv(recetas); st.rerun()
+                    del recetas[sel_receta]['ingredientes'][to_del]; guardar_recetas(recetas); st.rerun()
             else: st.info("Receta vacía.")
             
             st.metric("Costo Total Receta", f"${datos['costo_total']:.2f}")
@@ -580,7 +560,7 @@ def mostrar_recetas():
             ing_sel = c1.selectbox("Ingrediente", [i['nombre'] for i in ingredientes])
             cant_sel = c2.number_input("Cantidad", min_value=0.0, step=0.1)
             if c3.button("Agregar"):
-                recetas[sel_receta]['ingredientes'][ing_sel] = cant_sel; guardar_recetas_csv(recetas); st.rerun()
+                recetas[sel_receta]['ingredientes'][ing_sel] = cant_sel; guardar_recetas(recetas); st.rerun()
 
 def mostrar_precios():
     st.markdown('<div class="section-header">💰 Análisis de Precios y Márgenes</div>', unsafe_allow_html=True)
@@ -628,9 +608,8 @@ def mostrar_precios():
             
             if st.button("Actualizar Precio"):
                 todos_precios = []
-                todos_precios = r2_read_csv(R2_PRECIOS).to_dict('records')
+                todos_precios = api_read(R2_PRECIOS).to_dict("records")
 
-                
                 found = False
                 margen_nuevo = nuevo_precio - row['Costo Producción']
                 margen_p_nuevo = (margen_nuevo / nuevo_precio * 100) if nuevo_precio else 0
@@ -640,13 +619,17 @@ def mostrar_precios():
                         item['Precio Venta'] = nuevo_precio
                         item['Margen Bruto'] = margen_nuevo
                         item['Margen Bruto (%)'] = margen_p_nuevo
-                        found = True; break
+                        found = True
+                        break
+                
                 if not found:
                     todos_precios.append({
-                        'Producto': prod_sel, 'Precio Venta': nuevo_precio,
-                        'Margen Bruto': margen_nuevo, 'Margen Bruto (%)': margen_p_nuevo
+                        'Producto': prod_sel,
+                        'Precio Venta': nuevo_precio,
+                        'Margen Bruto': margen_nuevo,
+                        'Margen Bruto (%)': margen_p_nuevo
                     })
-                r2_write_csv(pd.DataFrame(todos_precios), R2_PRECIOS)
+                api_write(R2_PRECIOS, todos_precios)
                 st.success("Precio actualizado."); st.rerun()
 
     st.dataframe(df.style.format({
@@ -759,12 +742,13 @@ def mostrar_ventas(f_inicio, f_fin):
                                 inventario[ing]['stock_actual'] -= (cant_r * q)
                                 if inventario[ing]['stock_actual'] < 0: inventario[ing]['stock_actual'] = 0
                 if guardar_ventas(ventas_nuevas):
-                 guardar_inventario_csv(inventario)
-                 st.session_state.carrito = []
-                 st.toast("✅ Venta registrada y guardada en la nube")
-                 st.rerun()
+                    guardar_inventario(inventario)
+                    st.session_state.carrito = []
+                    st.toast("✅ Venta registrada y guardada en la nube")
+                    st.rerun()
                 else:
-                 st.error("❌ No se pudo guardar la venta") 
+                    st.error("❌ No se pudo guardar la venta")
+ 
         else: st.info("Carrito vacío")
 
    with col_hist:
@@ -806,7 +790,7 @@ def mostrar_inventario():
         ing_in = c1.selectbox("Ingrediente:", df['Ingrediente'].tolist())
         cant_in = c2.number_input("Cantidad a agregar:", min_value=0.0)
         if c3.button("Registrar Entrada"):
-            inv[ing_in]['stock_actual'] += cant_in; guardar_inventario_csv(inv); st.success(f"Actualizado {ing_in}"); st.rerun()
+            inv[ing_in]['stock_actual'] += cant_in; guardar_inventario(inv); st.success(f"Actualizado {ing_in}"); st.rerun()
 
 def mostrar_reposicion(f_inicio, f_fin):
     st.markdown('<div class="section-header">🔄 Reposición Sugerida</div>', unsafe_allow_html=True)
