@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import StringIO, BytesIO
 
-WORKER_URL = "https://admin.bonbon-peach.com/api"
+WORKER_URL = "https://admin.bonbon-peach.com"
 
 R2_INGREDIENTES = "IngredientesBase"
 R2_RECETAS = "Recetas"
