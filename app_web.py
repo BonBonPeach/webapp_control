@@ -16,7 +16,7 @@ WORKER_URL = "https://admin.bonbon-peach.com/api"
 R2_INGREDIENTES = "IngredientesBase"
 R2_RECETAS = "Recetas"
 R2_PRECIOS = "CostoPorProducto"
-R2_VENTAS = "VentasDiarias"
+R2_VENTAS = "VentasDiarias.csv"
 R2_INVENTARIO = "Inventario"
 
 USERS = st.secrets["users"]
