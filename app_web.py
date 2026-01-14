@@ -13,11 +13,11 @@ from io import StringIO, BytesIO
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 
-R2_INGREDIENTES = "IngredientesBase"
-R2_RECETAS = "Recetas"
-R2_PRECIOS = "CostoPorProducto"
-R2_VENTAS = "VentasDiarias"
-R2_INVENTARIO = "Inventario"
+R2_INGREDIENTES = "ingredientes"
+R2_RECETAS = "recetas"
+R2_PRECIOS = "precios"
+R2_VENTAS = "ventas"
+R2_INVENTARIO = "inventario"
 
 USERS = st.secrets["users"]
 
