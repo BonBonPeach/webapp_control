@@ -14,9 +14,15 @@ from io import StringIO, BytesIO
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 API_KEY=st.secrets["API_KEY"]
 
-st.write("WORKER_URL:", WORKER_URL)
-st.write("API_KEY exists:", bool(API_KEY))
-st.write("API_KEY length:", len(API_KEY) if API_KEY else "None")
+if st.button("TEST API"):
+    r = requests.get(
+        f"{WORKER_URL}/ventas",
+        headers={"X-API-Key": API_KEY},
+        timeout=10
+    )
+    st.write("Status:", r.status_code)
+    st.write("Body:", r.text[:500])
+
 
 R2_INGREDIENTES = "ingredientes"
 R2_RECETAS = "recetas"
