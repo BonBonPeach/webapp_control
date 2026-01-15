@@ -113,6 +113,7 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 1.5rem; color: #4B2840; }
 </style>
 """, unsafe_allow_html=True)
+
 #_______________________________
 #          Funciones de API
 #_______________________________
@@ -156,7 +157,6 @@ def api_write(endpoint, data):
     except Exception as e:
         st.error(f"❌ Error guardando {endpoint}: {e}")
         return False
-
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
@@ -301,16 +301,16 @@ def guardar_inventario(inventario_data):
 # ===============================
 # VENTAS
 # ===============================
-def leer_ventas(fecha_inicio=None, fecha_fin=None):
-    df = api_read("ventas")
-
-    if df.empty:
+def leer_ventas(f_ini=None, f_fin=None):
+    df = api_read(R2_VENTAS)
+    if df.empty or "Fecha" not in df.columns:
         return []
 
-    if fecha_inicio:
-        df = df[df["Fecha"] >= fecha_inicio]
-    if fecha_fin:
-        df = df[df["Fecha"] <= fecha_fin]
+    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], format="%d/%m/%Y", errors="coerce")
+    df = df.dropna(subset=["Fecha_DT"])
+
+    if f_ini and f_fin:
+        df = df[(df["Fecha_DT"].dt.date >= f_ini) & (df["Fecha_DT"].dt.date <= f_fin)]
 
     return df.to_dict("records")
 
