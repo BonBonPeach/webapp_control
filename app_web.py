@@ -126,14 +126,20 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 1.5rem; color: #4B2840; }
 </style>
 """, unsafe_allow_html=True)
-
+;_______________________________
+;          Funciones de API
+;_______________________________
 def api_read(endpoint):
     try:
         r = requests.get(
             f"{WORKER_URL}/{endpoint}",
-            headers={"X-API-Key": API_KEY},
+            headers={
+                "X-API-Key": API_KEY,
+                "User-Agent": "Streamlit-App/1.0",
+                "Accept": "application/json",
+            },
             timeout=10
-         )
+        )
         r.raise_for_status()
         data = r.json()
         if not isinstance(data, list):
@@ -149,16 +155,21 @@ def api_write(endpoint, data):
         r = requests.put(
             f"{WORKER_URL}/{endpoint}",
             json=payload,
-            headers={"X-API-Key": API_KEY},
+            headers={
+                "X-API-Key": API_KEY,
+                "User-Agent": "Streamlit-App/1.0",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
             timeout=10
         )
-
         r.raise_for_status()
         st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"❌ Error guardando {endpoint}: {e}")
         return False
+
 
 def normalizar_texto(texto):
     if not isinstance(texto, str): return ""
