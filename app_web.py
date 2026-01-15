@@ -315,9 +315,20 @@ def leer_ventas(f_ini=None, f_fin=None):
     return df.to_dict("records")
 
 def guardar_ventas(nuevas):
+    # 1. Leer el histórico desde el JSON (api_read debe devolver un DF vacío si no existe)
     df_actual = api_read(R2_VENTAS)
+    
+    # 2. Convertir las nuevas ventas entrantes en DataFrame
     df_nuevo = pd.DataFrame(nuevas)
-    df = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo])
+    
+    # 3. Concatenar: si el actual está vacío, usamos solo el nuevo.
+    # ignore_index=True es vital para que el JSON final tenga índices limpios (0, 1, 2...)
+    df = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo], ignore_index=True)
+    
+    # 4. Limpiar nombres de columnas por si acaso
+    df.columns = [c.strip() for c in df.columns]
+    
+    # 5. Guardar (api_write se encargará de convertir el DF a JSON internamente)
     return api_write(R2_VENTAS, df)
 
 def leer_precios_desglose():
