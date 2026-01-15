@@ -16,6 +16,8 @@ API_KEY=st.secrets["API_KEY"].strip()
 
 st.write("API_KEY repr:", repr(API_KEY))
 st.write("API_KEY length:", len(API_KEY))
+st.write("API_KEY:", repr(API_KEY))
+
 
 if st.button("TEST API"):
     r = requests.get(
