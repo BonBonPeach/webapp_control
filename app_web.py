@@ -126,9 +126,9 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 1.5rem; color: #4B2840; }
 </style>
 """, unsafe_allow_html=True)
-;_______________________________
-;          Funciones de API
-;_______________________________
+#_______________________________
+#          Funciones de API
+#_______________________________
 def api_read(endpoint):
     try:
         r = requests.get(
