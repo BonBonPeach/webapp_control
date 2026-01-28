@@ -460,7 +460,7 @@ def mostrar_dashboard(f_inicio, f_fin):
     df_filtered = pd.DataFrame(ventas)
     
     # --- KPIs ---
-    total_ventas = df_filtered['Total Venta Bruto'].sum()
+    total_ventas = df_filtered['Total Venta Neta'].sum()
     total_ganancia = df_filtered['Ganancia Neta'].sum()
     total_transacciones = len(df_filtered)
     
@@ -478,7 +478,7 @@ def mostrar_dashboard(f_inicio, f_fin):
     # --- GRÁFICO 1: TENDENCIA DIARIA ---
     st.subheader("Tendencia de Ventas (Diario)")
     daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(
-        Ventas=('Total Venta Bruto', 'sum'),
+        Ventas=('Total Venta Neta', 'sum'),
         Ganancia=('Ganancia Neta', 'sum')
     ).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
     
@@ -491,7 +491,7 @@ def mostrar_dashboard(f_inicio, f_fin):
     col_g1, col_g2 = st.columns(2)
     
     product_summary = df_filtered.groupby('Producto').agg(
-        Total_Venta=('Total Venta Bruto', 'sum'),
+        Total_Venta=('Total Venta Neta', 'sum'),
         Total_Ganancia=('Ganancia Neta', 'sum'),
         Cantidad=('Cantidad', 'sum')
     ).reset_index()
@@ -525,9 +525,9 @@ def mostrar_dashboard(f_inicio, f_fin):
     # Agrupar por semana (Inicio Lunes)
     df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
     
-    patron_agrupado = df_patron.groupby(['Inicio_Semana', 'Dia_Nombre'])['Total Venta Bruto'].sum().reset_index()
+    patron_agrupado = df_patron.groupby(['Inicio_Semana', 'Dia_Nombre'])['Total Venta Neta'].sum().reset_index()
     
-    fig_patron = px.line(patron_agrupado, x='Dia_Nombre', y='Total Venta Bruto', color='Inicio_Semana',
+    fig_patron = px.line(patron_agrupado, x='Dia_Nombre', y='Total Venta Neta', color='Inicio_Semana',
                          category_orders={'Dia_Nombre': ORDEN_DIAS}, # Forzar orden Lun-Dom
                          title="Comparativa Semanal (Día a Día)",
                          labels={'Total Venta Bruto': 'Ventas ($)', 'Inicio_Semana': 'Semana del'},
