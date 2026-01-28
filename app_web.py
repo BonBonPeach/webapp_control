@@ -301,16 +301,28 @@ def guardar_inventario(inventario_data):
 # ===============================
 # VENTAS
 # ===============================
+
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
     if df.empty or "Fecha" not in df.columns:
         return []
 
-    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], format="%d/%m/%Y", errors="coerce")
+    df["Fecha_DT"] = pd.to_datetime(
+        df["Fecha"], format="%d/%m/%Y", errors="coerce"
+    )
     df = df.dropna(subset=["Fecha_DT"])
 
     if f_ini and f_fin:
-        df = df[(df["Fecha_DT"].dt.date >= f_ini) & (df["Fecha_DT"].dt.date <= f_fin)]
+        df = df[
+            (df["Fecha_DT"].dt.date >= f_ini) &
+            (df["Fecha_DT"].dt.date <= f_fin)
+        ]
+
+    # 🧮 TOTAL REAL COBRADO
+    df["Total Venta Neta"] = (
+        clean_and_convert_float(df.get("Total Venta Bruto", 0)) -
+        clean_and_convert_float(df.get("Descuento ($)", 0))
+    )
 
     return df.to_dict("records")
 
