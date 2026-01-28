@@ -334,7 +334,6 @@ def leer_ventas(f_ini=None, f_fin=None):
             df[col] = (
                 pd.to_numeric(df[col], errors="coerce")
                 .fillna(0)
-                .round(2)
             )
 
     # 🔥 Cálculo inteligente del TOTAL NETO
