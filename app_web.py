@@ -167,7 +167,7 @@ def normalizar_texto(texto):
 
 def clean_and_convert_float(value_str, default=0.0):
     if isinstance(value_str, (int, float)): 
-        return round(float(value_str), 4)  # <--- Añadido round
+        return round(float(value_str), 6)  # <--- Añadido round
     if not isinstance(value_str, str): 
         return default
     cleaned = value_str.strip().replace('$', '').replace(',', '').replace('%', '')
