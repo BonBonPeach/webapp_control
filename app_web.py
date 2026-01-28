@@ -19,6 +19,8 @@ R2_RECETAS = "recetas"
 R2_PRECIOS = "precios"
 R2_VENTAS = "ventas"
 R2_INVENTARIO = "inventario"
+R2_SUBRECETAS = "subrecetas"
+R2_MODIFICADORES = "modificadores"
 
 USERS = st.secrets["users"]
 
@@ -217,14 +219,21 @@ def guardar_ingredientes_base(data):
 def leer_recetas():
     df = api_read(R2_RECETAS)
     recetas = {}
+
     if df.empty or "Ingrediente" not in df.columns:
         return recetas
 
-    productos = [c for c in df.columns if c != "Ingrediente"]
-    for p in productos:
-        recetas[p] = {"ingredientes": {}, "costo_total": 0}
-
     ingredientes = leer_ingredientes_base()
+    subrecetas = leer_subrecetas()
+
+    productos = [c for c in df.columns if c != "Ingrediente"]
+
+    for p in productos:
+        recetas[p] = {
+            "ingredientes": {},
+            "subrecetas": [],
+            "costo_total": 0
+        }
 
     for _, r in df.iterrows():
         ing = r["Ingrediente"]
@@ -234,10 +243,16 @@ def leer_recetas():
                 recetas[p]["ingredientes"][ing] = cant
 
     for p in recetas:
+        # Ingredientes directos
         for ing, c in recetas[p]["ingredientes"].items():
             info = next((i for i in ingredientes if i["nombre"] == ing), None)
             if info:
                 recetas[p]["costo_total"] += info["costo_receta"] * c
+
+        # Subrecetas incluidas
+        for sr in recetas[p]["subrecetas"]:
+            if sr in subrecetas:
+                recetas[p]["costo_total"] += subrecetas[sr]["costo_total"]
 
     return recetas
 
@@ -250,6 +265,60 @@ def guardar_recetas(recetas):
             fila[p] = recetas[p]["ingredientes"].get(ing, "")
         data.append(fila)
     return api_write(R2_RECETAS, pd.DataFrame(data))
+
+# ===============================
+# SUBRECETAS
+# ===============================
+def leer_subrecetas():
+    df = api_read(R2_SUBRECETAS)
+    subrecetas = {}
+
+    if df.empty or "Subreceta" not in df.columns:
+        return subrecetas
+
+    ingredientes_base = leer_ingredientes_base()
+
+    for _, r in df.iterrows():
+        nombre = r["Subreceta"]
+        subrecetas[nombre] = {
+            "ingredientes": {},
+            "costo_total": 0
+        }
+
+        for col in df.columns:
+            if col == "Subreceta":
+                continue
+
+            cant = clean_and_convert_float(r[col])
+            if cant > 0:
+                info = next((i for i in ingredientes_base if i["nombre"] == col), None)
+                if info:
+                    subrecetas[nombre]["ingredientes"][col] = cant
+                    subrecetas[nombre]["costo_total"] += cant * info["costo_receta"]
+
+    return subrecetas
+# ===============================
+# MODIFICADORES
+# ===============================
+def leer_modificadores():
+    df = api_read(R2_MODIFICADORES)
+    mods = {}
+
+    if df.empty:
+        return mods
+
+    for _, r in df.iterrows():
+        prod = str(r.get("Producto", "")).strip()
+        if not prod:
+            continue
+
+        mods.setdefault(prod, []).append({
+            "nombre": r.get("Nombre"),
+            "precio": clean_and_convert_float(r.get("Precio")),
+            "costo": clean_and_convert_float(r.get("Costo"))
+        })
+
+    return mods
 
 # ===============================
 # INVENTARIO
@@ -308,7 +377,6 @@ def leer_ventas(f_ini=None, f_fin=None):
     if df.empty or "Fecha" not in df.columns:
         return []
 
-    # --- Fecha segura ---
     df["Fecha_DT"] = pd.to_datetime(
         df["Fecha"], format="%d/%m/%Y", errors="coerce"
     )
@@ -320,37 +388,22 @@ def leer_ventas(f_ini=None, f_fin=None):
             (df["Fecha_DT"].dt.date <= f_fin)
         ]
 
-    # --- Columnas numéricas existentes ---
-    for col in [
+    num_cols = [
         "Total Venta Bruto",
         "Descuento ($)",
-        "Ganancia Bruta",
-        "Ganancia Neta",
         "Costo Total",
-        "Precio Unitario",
-        "Cantidad"
-    ]:
-        if col in df.columns:
-            df[col] = (
-                pd.to_numeric(df[col], errors="coerce")
-                .fillna(0)
-            )
+        "Ganancia Bruta",
+        "Ganancia Neta"
+    ]
 
-    # 🔥 Cálculo inteligente del TOTAL NETO
-    if "Total Venta Neta" in df.columns:
-        df["Total Venta Neta"] = (
-            pd.to_numeric(df["Total Venta Neta"], errors="coerce")
-            .fillna(
-                df["Total Venta Bruto"]
-                - df.get("Descuento ($)", 0)
-            )
-        )
-    else:
-        # Histórico viejo → se calcula al vuelo
-        df["Total Venta Neta"] = (
-            df["Total Venta Bruto"]
-            - df.get("Descuento ($)", 0)
-        )
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # 🔐 TOTAL NETO CANÓNICO
+    df["Total Venta Neta"] = (
+        df["Total Venta Bruto"] - df["Descuento ($)"]
+    )
 
     return df.to_dict("records")
 
@@ -375,6 +428,38 @@ def guardar_ventas(nuevas):
 
     return api_write(R2_VENTAS, df)
 
+def calcular_venta(producto, cantidad, mods_seleccionados, descuento_pct=0):
+    recetas = leer_recetas()
+    modificadores = leer_modificadores()
+
+    receta = recetas.get(producto)
+    if not receta:
+        return None
+
+    precio_base = clean_and_convert_float(
+        leer_precios_desglose()[producto]["precio_venta"]
+    ) * cantidad
+
+    costo_base = receta["costo_total"] * cantidad
+
+    precio_mods = sum(m["precio"] for m in mods_seleccionados)
+    costo_mods = sum(m["costo"] for m in mods_seleccionados)
+
+    total_bruto = precio_base + precio_mods
+    descuento = total_bruto * (descuento_pct / 100)
+    total_neto = total_bruto - descuento
+
+    costo_total = costo_base + costo_mods
+    ganancia = total_neto - costo_total
+
+    return {
+        "Total Venta Bruto": round(total_bruto, 2),
+        "Descuento ($)": round(descuento, 2),
+        "Total Venta Neta": round(total_neto, 2),
+        "Costo Total": round(costo_total, 2),
+        "Ganancia Bruta": round(ganancia, 2),
+        "Ganancia Neta": round(ganancia, 2)
+    }
 
 def leer_precios_desglose():
     precios = {}
