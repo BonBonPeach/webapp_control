@@ -172,7 +172,7 @@ def clean_and_convert_float(value_str, default=0.0):
         return default
     cleaned = value_str.strip().replace('$', '').replace(',', '').replace('%', '')
     try: 
-        return round(float(cleaned), 2)    # <--- Añadido round
+        return round(float(cleaned), 6)    # <--- Añadido round
     except (ValueError, TypeError): 
         return default
 
