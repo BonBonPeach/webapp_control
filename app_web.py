@@ -304,9 +304,11 @@ def guardar_inventario(inventario_data):
 
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
+
     if df.empty or "Fecha" not in df.columns:
         return []
 
+    # --- Fecha segura ---
     df["Fecha_DT"] = pd.to_datetime(
         df["Fecha"], format="%d/%m/%Y", errors="coerce"
     )
@@ -318,30 +320,62 @@ def leer_ventas(f_ini=None, f_fin=None):
             (df["Fecha_DT"].dt.date <= f_fin)
         ]
 
-    # 🧮 TOTAL REAL COBRADO
-    df["Total Venta Neta"] = (
-        clean_and_convert_float(df.get("Total Venta Bruto", 0)) -
-        clean_and_convert_float(df.get("Descuento ($)", 0))
-    )
+    # --- Columnas numéricas existentes ---
+    for col in [
+        "Total Venta Bruto",
+        "Descuento ($)",
+        "Ganancia Bruta",
+        "Ganancia Neta",
+        "Costo Total",
+        "Precio Unitario",
+        "Cantidad"
+    ]:
+        if col in df.columns:
+            df[col] = (
+                pd.to_numeric(df[col], errors="coerce")
+                .fillna(0)
+                .round(2)
+            )
+
+    # 🔥 Cálculo inteligente del TOTAL NETO
+    if "Total Venta Neta" in df.columns:
+        df["Total Venta Neta"] = (
+            pd.to_numeric(df["Total Venta Neta"], errors="coerce")
+            .fillna(
+                df["Total Venta Bruto"]
+                - df.get("Descuento ($)", 0)
+            )
+        )
+    else:
+        # Histórico viejo → se calcula al vuelo
+        df["Total Venta Neta"] = (
+            df["Total Venta Bruto"]
+            - df.get("Descuento ($)", 0)
+        )
 
     return df.to_dict("records")
 
 def guardar_ventas(nuevas):
-    # 1. Leer el histórico desde el JSON (api_read debe devolver un DF vacío si no existe)
     df_actual = api_read(R2_VENTAS)
-    
-    # 2. Convertir las nuevas ventas entrantes en DataFrame
     df_nuevo = pd.DataFrame(nuevas)
-    
-    # 3. Concatenar: si el actual está vacío, usamos solo el nuevo.
-    # ignore_index=True es vital para que el JSON final tenga índices limpios (0, 1, 2...)
-    df = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo], ignore_index=True)
-    
-    # 4. Limpiar nombres de columnas por si acaso
-    df.columns = [c.strip() for c in df.columns]
-    
-    # 5. Guardar (api_write se encargará de convertir el DF a JSON internamente)
+
+    # Evitar NaN (clave para JSON válido)
+    df_nuevo = df_nuevo.fillna(0)
+
+    # Solo si viene una venta nueva
+    if "Total Venta Neta" not in df_nuevo.columns:
+        df_nuevo["Total Venta Neta"] = (
+            df_nuevo.get("Total Venta Bruto", 0)
+            - df_nuevo.get("Descuento ($)", 0)
+        )
+
+    df = df_nuevo if df_actual.empty else pd.concat(
+        [df_actual, df_nuevo],
+        ignore_index=True
+    )
+
     return api_write(R2_VENTAS, df)
+
 
 def leer_precios_desglose():
     precios = {}
