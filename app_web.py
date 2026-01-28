@@ -530,7 +530,7 @@ def mostrar_dashboard(f_inicio, f_fin):
     fig_patron = px.line(patron_agrupado, x='Dia_Nombre', y='Total Venta Neta', color='Inicio_Semana',
                          category_orders={'Dia_Nombre': ORDEN_DIAS}, # Forzar orden Lun-Dom
                          title="Comparativa Semanal (Día a Día)",
-                         labels={'Total Venta Bruto': 'Ventas ($)', 'Inicio_Semana': 'Semana del'},
+                         labels={'Total Venta Neta': 'Ventas ($)', 'Inicio_Semana': 'Semana del'},
                          template='plotly_white')
     st.plotly_chart(fig_patron, use_container_width=True)
 
@@ -541,7 +541,7 @@ def mostrar_dashboard(f_inicio, f_fin):
     df_filtered['Semana_Inicio'] = df_filtered['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
     
     weekly = df_filtered.groupby('Semana_Inicio').agg({
-        'Total Venta Bruto': 'sum',
+        'Total Venta Neta': 'sum',
         'Ganancia Neta': 'sum',
         'Cantidad': 'sum'
     }).reset_index().sort_values('Semana_Inicio', ascending=False)
@@ -552,8 +552,8 @@ def mostrar_dashboard(f_inicio, f_fin):
     )
     
     st.dataframe(
-        weekly[['Periodo', 'Total Venta Bruto', 'Ganancia Neta', 'Cantidad']].style.format({
-            'Total Venta Bruto': '${:,.2f}', 
+        weekly[['Periodo', 'Total Venta Neta', 'Ganancia Neta', 'Cantidad']].style.format({
+            'Total Venta Neta': '${:,.2f}', 
             'Ganancia Neta': '${:,.2f}'
         }), 
         use_container_width=True, hide_index=True
@@ -736,15 +736,15 @@ def mostrar_ventas(f_inicio, f_fin):
         with cg1:
             # Gráfico Dona: Efectivo vs Tarjeta
             if 'Forma Pago' in ventas_df.columns:
-                metodo_sum = ventas_df.groupby('Forma Pago')['Total Venta Bruto'].sum().reset_index()
-                fig_met = px.pie(metodo_sum, values='Total Venta Bruto', names='Forma Pago', hole=.5, 
+                metodo_sum = ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index()
+                fig_met = px.pie(metodo_sum, values='Total Venta Neta', names='Forma Pago', hole=.5, 
                                 title="Distribución de Pago", 
                                 color_discrete_sequence=["#D4D4D4", "#95E9BF"])
                 st.plotly_chart(fig_met, use_container_width=True)
             
         with cg2:
             # Gráfico Dona: Venta vs Ganancia
-            venta_t = ventas_df['Total Venta Bruto'].sum()
+            venta_t = ventas_df['Total Venta Neta'].sum()
             ganancia_t = ventas_df['Ganancia Neta'].sum()
             costos_t = venta_t - ganancia_t
             
@@ -809,7 +809,7 @@ def mostrar_ventas(f_inicio, f_fin):
                     
                     ventas_nuevas.append({
                         'Fecha': fecha_hoy, 'Producto': p, 'Cantidad': q,
-                        'Precio Unitario': pu, 'Total Venta Bruto': total_bruto,
+                        'Precio Unitario': pu, 'Total Venta Neta': total_bruto,
                         'Descuento (%)': d, 'Descuento ($)': monto_desc,
                         'Costo Total': costo_total, 'Ganancia Bruta': subtotal - costo_total,
                         'Comision ($)': comision, 'Ganancia Neta': ganancia,
@@ -836,7 +836,7 @@ def mostrar_ventas(f_inicio, f_fin):
         if ventas_hist:
             df_h = pd.DataFrame(ventas_hist)
             if 'Fecha_DT' in df_h.columns: df_h = df_h.sort_values('Fecha_DT', ascending=False)
-            cols_admin = ['Fecha', 'Producto', 'Cantidad', 'Total Venta Bruto', 'Forma Pago']
+            cols_admin = ['Fecha', 'Producto', 'Cantidad', 'Total Venta Neta', 'Forma Pago']
             cols_vendedor = ['Fecha', 'Producto', 'Cantidad', 'Forma Pago']
             cols = cols_admin if es_admin else cols_vendedor
             st.dataframe(df_h[cols], use_container_width=True, hide_index=True)
