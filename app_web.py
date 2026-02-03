@@ -419,44 +419,323 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
 
 def mostrar_dashboard(f_inicio, f_fin):
     st.markdown('<div class="section-header">📊 Dashboard General</div>', unsafe_allow_html=True)
+    
     ventas = leer_ventas(f_inicio, f_fin)
     if not ventas:
         st.warning("No hay datos para el rango seleccionado.")
         return
+
     df_filtered = pd.DataFrame(ventas)
     
+    # --- KPIs ---
     total_ventas = df_filtered['Total Venta Neta'].sum()
     total_ganancia = df_filtered['Ganancia Neta'].sum()
     total_transacciones = len(df_filtered)
-    ticket_promedio = total_ventas / total_transacciones if total_transacciones > 0 else 0
     
+    # METRICO NUEVO: TICKET PROMEDIO
+    ticket_promedio = total_ventas / total_transacciones if total_transacciones > 0 else 0
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Ventas Totales", f"${total_ventas:,.2f}")
     c2.metric("Ganancia Neta", f"${total_ganancia:,.2f}")
     c3.metric("Ticket Promedio", f"${ticket_promedio:,.2f}")
     c4.metric("Transacciones", f"{total_transacciones}")
+    
     st.markdown("---")
     
-    daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(
-        Ventas=('Total Venta Neta', 'sum'),
-        Ganancia=('Ganancia Neta', 'sum')
-    ).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
+    # --- GRÁFICO 1: TENDENCIA DIARIA CON CONTROL SEMANAL ---
+    st.subheader("Tendencia de Ventas (Diario)")
+    
+    # ===============================
+    # Resumen diario
+    # ===============================
+    daily_summary = (
+        df_filtered
+            .groupby(df_filtered['Fecha_DT'].dt.date)
+            .agg(
+                Ventas=('Total Venta Neta', 'sum'),
+                Ganancia=('Ganancia Neta', 'sum')
+            )
+            .reset_index()
+            .rename(columns={'Fecha_DT': 'Fecha'})
+    )
+    
     daily_summary['Fecha'] = pd.to_datetime(daily_summary['Fecha'])
     
-    fig_daily = px.line(daily_summary, x='Fecha', y=['Ventas', 'Ganancia'], markers=True, color_discrete_sequence=['#4B2840', '#F1B48B'], template='plotly_white')
+    # ===============================
+    # Definición explícita de semana (LUNES → DOMINGO)
+    # ===============================
+    daily_summary['Inicio_Semana'] = daily_summary['Fecha'] - pd.to_timedelta(
+        daily_summary['Fecha'].dt.weekday, unit='D'
+    )
+    daily_summary['Fin_Semana'] = daily_summary['Inicio_Semana'] + pd.Timedelta(days=6)
+    
+    # ===============================
+    # Medias semanales
+    # ===============================
+    weekly_means = (
+        daily_summary
+            .groupby('Inicio_Semana')
+            .agg(
+                mean_ventas=('Ventas', 'mean'),
+                mean_ganancia=('Ganancia', 'mean')
+            )
+            .reset_index()
+    )
+    
+    weekly_means['Fin_Semana'] = weekly_means['Inicio_Semana'] + pd.Timedelta(days=7)
+    
+    # ===============================
+    # Gráfico base
+    # ===============================
+    fig_daily = px.line(
+        daily_summary,
+        x='Fecha',
+        y=['Ventas', 'Ganancia'],
+        markers=True,
+        color_discrete_sequence=['#4B2840', '#F1B48B'],
+        template='plotly_white'
+    )
+    
+    # ===============================
+    # Líneas de media semanal (PUNTEADAS)
+    # ===============================
+    for _, row in weekly_means.iterrows():
+    
+        # Media semanal Ventas
+        fig_daily.add_trace(
+            go.Scatter(
+                x=[row['Inicio_Semana'], row['Fin_Semana']],
+                y=[row['mean_ventas'], row['mean_ventas']],
+                mode="lines",
+                line=dict(
+                    color="#1f77b4",
+                    width=1,
+                    dash="dot"   # <<< punteado
+                ),
+                showlegend=False,
+                hoverinfo="skip"
+            )
+        )
+    
+        # Media semanal Ganancia
+        fig_daily.add_trace(
+            go.Scatter(
+                x=[row['Inicio_Semana'], row['Fin_Semana']],
+                y=[row['mean_ganancia'], row['mean_ganancia']],
+                mode="lines",
+                line=dict(
+                    color="#2ca02c",
+                    width=1,
+                    dash="dot"   # <<< punteado
+                ),
+                showlegend=False,
+                hoverinfo="skip"
+            )
+        )
+    
+    # ===============================
+    # Líneas verticales (lunes)
+    # ===============================
+    mondays = weekly_means['Inicio_Semana']
+    
+    for monday in mondays:
+        fig_daily.add_vline(
+            x=monday,
+            line_width=1,
+            line_dash="dot",
+            line_color="gray",
+            opacity=0.5
+        )
+    
+    fig_daily.update_layout(
+        legend_title_text="Indicadores",
+        hovermode="x unified"
+    )
+    
     st.plotly_chart(fig_daily, use_container_width=True)
 
+    # 3. Análisis de Productos
+    st.subheader("Desempeño de Productos")
     col_g1, col_g2 = st.columns(2)
-    product_summary = df_filtered.groupby('Producto').agg(Total_Venta=('Total Venta Neta', 'sum'), Total_Ganancia=('Ganancia Neta', 'sum'), Cantidad=('Cantidad', 'sum')).reset_index()
     
-    with col_g1:
-        fig_prod = px.bar(product_summary.sort_values('Cantidad', ascending=False).head(10), x='Cantidad', y='Producto', orientation='h', title="Top 10 (Volumen)", text_auto=True, template='plotly_white', color='Cantidad', color_continuous_scale='Purples')
-        fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_prod, use_container_width=True)
-    with col_g2:
-        fig_gan = px.bar(product_summary.sort_values('Total_Ganancia', ascending=False).head(10), x='Total_Ganancia', y='Producto', orientation='h', title="Top 10 (Ganancia $)", text_auto='.2s', template='plotly_white', color='Total_Ganancia', color_continuous_scale='Peach')
-        fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_gan, use_container_width=True)
+    product_summary = df_filtered.groupby('Producto').agg(
+        Total_Venta=('Total Venta Neta', 'sum'),
+        Total_Ganancia=('Ganancia Neta', 'sum'),
+        Cantidad=('Cantidad', 'sum')
+    ).reset_index()
+    
+    st.subheader("Top 10 Productos por Volumen")
+
+    top_cant = product_summary.sort_values('Cantidad', ascending=False).head(10)
+    fig_prod = px.bar(
+        top_cant,
+        x='Cantidad',
+        y='Producto',
+        orientation='h',
+        text_auto=True,
+        template='plotly_white',
+        color='Cantidad',
+        color_continuous_scale='Purples'
+    )
+    fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
+    st.plotly_chart(fig_prod, use_container_width=True)
+    
+    st.subheader("Top 10 Productos por Ganancia")
+    
+    top_gan = product_summary.sort_values('Total_Ganancia', ascending=False).head(10)
+    fig_gan = px.bar(
+        top_gan,
+        x='Total_Ganancia',
+        y='Producto',
+        orientation='h',
+        text_auto='.2s',
+        template='plotly_white',
+        color='Total_Ganancia',
+        color_continuous_scale='Peach'
+    )
+    fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
+    st.plotly_chart(fig_gan, use_container_width=True)
+
+
+    # --- GRÁFICO 2: PATRONES SEMANALES (SUPERPOSICIÓN) ---
+    st.subheader("🔎 Patrones Semanales")
+    st.caption(
+        "Compara el comportamiento diario entre semanas completas para detectar patrones repetitivos."
+    )
+    
+    df_patron = df_filtered.copy()
+     
+    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(
+        lambda x: x - datetime.timedelta(days=x.weekday())
+    )
+    # Día de la semana en español
+    df_patron['Dia_Nombre'] = (
+        df_patron['Fecha_DT']
+        .dt.day_name()
+        .map(DIAS_ESP)
+    )
+    
+    # 1️⃣ AGRUPAR POR DÍA REAL (NO POR REGISTRO)
+    ventas_diarias = (
+        df_patron
+        .groupby(['Fecha_DT', 'Dia_Nombre'], as_index=False)
+        .agg({'Total Venta Neta': 'sum'})
+    )
+    
+    # 2️⃣ QUITAR DÍAS SIN VENTA REAL
+    ventas_diarias = ventas_diarias[
+        ventas_diarias['Total Venta Neta'] > 0
+    ]
+    
+    # 3️⃣ PROMEDIAR POR DÍA DE LA SEMANA
+    patron_promedio = (
+        ventas_diarias
+        .groupby('Dia_Nombre', as_index=False)['Total Venta Neta']
+        .mean()
+    )
+      
+    # Forzar orden Lunes → Domingo
+    patron_promedio['Dia_Nombre'] = pd.Categorical(
+        patron_promedio['Dia_Nombre'],
+        categories=ORDEN_DIAS,
+        ordered=True
+    )
+    
+    patron_promedio = patron_promedio.sort_values('Dia_Nombre')
+
+    
+    # Etiqueta corta para leyenda
+    df_patron['Semana_Label'] = df_patron['Inicio_Semana'].dt.strftime('%d/%m')
+    
+    # Agrupación
+    patron_agrupado = (
+        df_patron
+        .groupby(['Semana_Label', 'Dia_Nombre'], as_index=False)
+        ['Total Venta Neta']
+        .sum()
+    )
+    
+    fig_patron = px.line(
+        patron_agrupado,
+        x='Dia_Nombre',
+        y='Total Venta Neta',
+        color='Semana_Label',
+        category_orders={'Dia_Nombre': ORDEN_DIAS},
+        markers=True,
+        template='plotly_white',
+        labels={
+            'Total Venta Neta': 'Ventas ($)',
+            'Dia_Nombre': 'Día de la semana',
+            'Semana_Label': 'Semana'
+        },
+        title="Comparativa Semanal Día a Día"
+    )
+    
+    fig_patron.update_layout(
+        legend_title_text="Semana (Lun)",
+        hovermode="x unified"
+    )
+    
+    st.plotly_chart(fig_patron, use_container_width=True)
+
+
+    st.subheader("📊 Venta Promedio por Día ")
+    fig_prom = px.bar(
+        patron_promedio,
+        x='Dia_Nombre',
+        y='Total Venta Neta',
+        text_auto='.2s',
+        template='plotly_white',
+        labels={
+            'Dia_Nombre': 'Día de la semana',
+            'Total Venta Neta': 'Venta Promedio ($)'
+        },
+        color='Total Venta Neta',
+        color_continuous_scale='bluyl'
+    )
+
+    st.plotly_chart(fig_prom, use_container_width=True)
+
+    
+    if not patron_promedio.empty:
+        mejor = patron_promedio.loc[
+            patron_promedio['Total Venta Neta'].idxmax()
+        ]
+        peor = patron_promedio.loc[
+            patron_promedio['Total Venta Neta'].idxmin()
+        ]
+    
+        st.success(
+            f"🔥 Mejor día promedio: **{mejor['Dia_Nombre']}** "
+            f"(${mejor['Total Venta Neta']:,.0f})\n\n"
+            f"🧊 Día más bajo (con ventas): **{peor['Dia_Nombre']}** "
+            f"(${peor['Total Venta Neta']:,.0f})"
+        )
+
+    # --- TABLA: RESUMEN SEMANAL (LUNES A DOMINGO) ---
+    st.subheader("Resumen Semanal (Lunes - Domingo)")
+    
+    # Agrupar forzando inicio en Lunes
+    df_filtered['Semana_Inicio'] = df_filtered['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
+    
+    weekly = df_filtered.groupby('Semana_Inicio').agg({
+        'Total Venta Neta': 'sum',
+        'Ganancia Neta': 'sum',
+        'Cantidad': 'sum'
+    }).reset_index().sort_values('Semana_Inicio', ascending=False)
+    
+    # Formatear columna fecha para visualización "Lun DD/MM - Dom DD/MM"
+    weekly['Periodo'] = weekly['Semana_Inicio'].apply(
+        lambda x: f"Lun {x.strftime('%d/%m')} - Dom {(x + datetime.timedelta(days=6)).strftime('%d/%m')}"
+    )
+    
+    st.dataframe(
+        weekly[['Periodo', 'Total Venta Neta', 'Ganancia Neta', 'Cantidad']].style.format({
+            'Total Venta Neta': '${:,.2f}', 
+            'Ganancia Neta': '${:,.2f}'
+        }), 
+        use_container_width=True, hide_index=True
+    )
 
 def mostrar_ingredientes():
     st.markdown('<div class="section-header">🧪 Gestión de Ingredientes</div>', unsafe_allow_html=True)
@@ -498,6 +777,7 @@ def mostrar_ingredientes():
         df['Costo Compra'] = df['costo_compra'].apply(lambda x: f"${x:.2f}")
         df['Costo Receta'] = df['costo_receta'].apply(lambda x: f"${x:.4f}")
         st.dataframe(df[['nombre', 'proveedor', 'unidad_compra', 'Costo Compra', 'cantidad_compra', 'unidad_receta', 'Costo Receta']], use_container_width=True, hide_index=True)
+
 
 def mostrar_recetas():
     st.markdown('<div class="section-header">📝 Recetas y Configuración</div>', unsafe_allow_html=True)
@@ -891,11 +1171,22 @@ def mostrar_inventario():
 
 def mostrar_reposicion(f_inicio, f_fin):
     st.markdown('<div class="section-header">🔄 Reposición Sugerida</div>', unsafe_allow_html=True)
-    data = calcular_reposicion_sugerida(f_inicio, f_fin)
-    if data:
-        df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True)
-    else: st.warning("Sin datos.")
+    data_reposicion = calcular_reposicion_sugerida(f_inicio, f_fin)
+    
+    if data_reposicion:
+        df = pd.DataFrame(data_reposicion)
+        m1, m2 = st.columns(2)
+        m1.metric("Inversión Estimada", f"${df['Costo Reposición'].sum():,.2f}")
+        m2.metric("Items a Reponer", len(df))
+        st.divider()
+        fig = px.bar(df.sort_values('Costo Reposición', ascending=False).head(10), 
+                     x='Ingrediente', y='Costo Reposición', title="Top Costos Reposición", 
+                     color='Costo Reposición', color_continuous_scale='Bluered', template='plotly_white')
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df[['Ingrediente', 'Cantidad Necesaria', 'Unidad', 'Proveedor', 'Costo Reposición']], use_container_width=True)
+        csv = df.to_csv(index=False, encoding='latin-1')
+        st.download_button("📥 Descargar CSV", data=csv, file_name=f"Reposicion.csv", mime='text/csv')
+    else: st.warning("No hay datos suficientes.")
 
 # --- MAIN LOOP ---
 def main():
