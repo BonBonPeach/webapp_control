@@ -964,9 +964,17 @@ def mostrar_ventas(f_inicio, f_fin):
     # Inicializar estados de sesión si no existen
     if 'carrito' not in st.session_state: st.session_state.carrito = []
     if 'temp_mods' not in st.session_state: st.session_state.temp_mods = {}
-
+ 
     col_pos, col_hist = st.columns([2, 3])
-    
+        with st.expander("📊 Resumen Rápido", expanded=False):
+        cg1, cg2 = st.columns(2)
+        with cg1:
+            if 'Forma Pago' in ventas_df.columns:
+                st.plotly_chart(px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), values='Total Venta Neta', names='Forma Pago', hole=.5, color_discrete_sequence=["#D4D4D4", "#95E9BF"]), use_container_width=True)
+        with cg2:
+            venta_t = ventas_df['Total Venta Neta'].sum(); ganancia_t = ventas_df['Ganancia Neta'].sum()
+            st.plotly_chart(px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, venta_t - ganancia_t], hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"]), use_container_width=True)
+
     with col_pos:
         st.subheader("➕ Nueva Orden")
         
@@ -998,12 +1006,12 @@ def mostrar_ventas(f_inicio, f_fin):
                         mod_key = f"qty_mod_{m_name}"
                         if mod_key not in st.session_state: st.session_state[mod_key] = 0
                         
-                        if c_m2.button("➖", key=f"min_{m_name}"):
+                        if c_m2.button("-", key=f"min_{m_name}"):
                             if st.session_state[mod_key] > 0: st.session_state[mod_key] -= 1
                         
                         c_m3.write(f"**{st.session_state[mod_key]}**")
                         
-                        if c_m4.button("➕", key=f"plus_{m_name}"):
+                        if c_m4.button("+", key=f"plus_{m_name}"):
                             st.session_state[mod_key] += 1
 
             # 3. CANTIDAD Y DESCUENTO DEL PRODUCTO PRINCIPAL
@@ -1056,14 +1064,14 @@ def mostrar_ventas(f_inicio, f_fin):
                     # Controles de cantidad en el carrito
                     col_c1, col_c2, col_c3, col_c4 = st.columns([1, 1, 1, 2])
                     
-                    if col_c1.button("➖", key=f"cart_min_{i}"):
+                    if col_c1.button("-", key=f"cart_min_{i}"):
                         if item['Cantidad'] > 1:
                             st.session_state.carrito[i]['Cantidad'] -= 1
                             st.rerun()
                     
                     col_c2.write(f"**{item['Cantidad']}**")
                     
-                    if col_c3.button("➕", key=f"cart_plus_{i}"):
+                    if col_c3.button("+", key=f"cart_plus_{i}"):
                         st.session_state.carrito[i]['Cantidad'] += 1
                         st.rerun()
                         
