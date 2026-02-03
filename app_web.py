@@ -16,7 +16,7 @@ API_KEY=st.secrets["API_KEY"].strip()
 
 R2_INGREDIENTES = "ingredientes"
 R2_RECETAS = "recetas"
-R2_MODIFICADORES = "modificadores"  # <--- NUEVO
+R2_MODIFICADORES = "modificadores" # Nuevo endpoint
 R2_PRECIOS = "precios"
 R2_VENTAS = "ventas"
 R2_INVENTARIO = "inventario"
@@ -196,12 +196,10 @@ def leer_recetas():
         recetas[p] = {"ingredientes": {}, "costo_total": 0}
 
     ingredientes = leer_ingredientes_base()
-    
-    # Construir mapa de costos incluyendo sub-recetas recursivas (simplificado)
-    # Primero cargamos ingredientes base
+    # Mapa simple de costos base
     mapa_costos = {i["nombre"]: i["costo_receta"] for i in ingredientes}
 
-    # Cargamos estructura
+    # Cargar estructura
     for _, r in df.iterrows():
         ing = r["Ingrediente"]
         for p in productos:
@@ -209,23 +207,32 @@ def leer_recetas():
             if cant > 0:
                 recetas[p]["ingredientes"][ing] = cant
 
-    # Cálculo de costo con barrido simple (asume que si es sub-receta, ya existe o se calcula aparte)
-    # NOTA: Para sub-recetas exactas, se requiere orden de dependencia. Aquí usamos costo directo si existe en ingredientes,
-    # si no, intentamos buscar el costo de la receta si ya fue calculada (esto requeriría múltiples pases o grafo).
-    # Simplificación POS: Asumimos que si usas una Sub-Receta, esta debe tener un "Costo Referencial" o tratarse como ingrediente.
-    
+    # Cálculo de costo (Intenta resolver sub-recetas simple)
+    # Nota: Para una recursividad perfecta se requeriría un grafo, aquí usamos una aproximación POS
     for p in recetas:
         for ing, c in recetas[p]["ingredientes"].items():
-            # Buscar en Ingredientes Base
-            costo_unitario = mapa_costos.get(ing, 0)
+            # 1. Costo directo (Ingrediente base)
+            costo_u = mapa_costos.get(ing, 0)
             
-            # SI NO ESTÁ en ingredientes, podría ser otra RECETA (Sub-receta)
-            if costo_unitario == 0 and ing in recetas:
-                # Intento simple de obtener costo de sub-receta (solo si ya fue procesada o calculada previamente)
-                # En un sistema real, esto debe ser recursivo.
+            # 2. Si es 0, verificar si es otra Receta (Sub-receta)
+            if costo_u == 0 and ing in recetas:
+                # *Simplificación*: Asumimos costo 0 si la sub-receta no se ha calculado aún. 
+                # En un flujo ideal, las sub-recetas deben crearse antes.
                 pass 
+
+            recetas[p]["costo_total"] += costo_u * c
             
-            recetas[p]["costo_total"] += costo_unitario * c
+    # Segunda pasada para intentar capturar costos de sub-recetas simples ya calculadas
+    for p in recetas:
+        costo_recalc = 0
+        for ing, c in recetas[p]["ingredientes"].items():
+            val = mapa_costos.get(ing, 0)
+            if val == 0 and ing in recetas:
+                 # Intentar tomar el costo de la sub-receta (solo funciona si no hay ciclos complejos)
+                 val = recetas[ing]["costo_total"]
+            costo_recalc += val * c
+        if costo_recalc > 0:
+            recetas[p]["costo_total"] = costo_recalc
 
     return recetas
 
@@ -243,12 +250,11 @@ def guardar_recetas(recetas):
 # MODIFICADORES (NUEVO)
 # ===============================
 def leer_modificadores():
-    # Estructura: Modificador | Ingrediente | Cantidad | Precio Extra
+    # Estructura R2: Modificador | Precio Extra | Ingrediente Base | Cantidad
     df = api_read(R2_MODIFICADORES)
     modificadores = {}
     if df.empty: return modificadores
     
-    # Agrupamos por nombre de modificador
     if "Modificador" in df.columns:
         for mod_name, group in df.groupby("Modificador"):
             modificadores[mod_name] = {
@@ -265,21 +271,16 @@ def leer_modificadores():
 def guardar_modificadores(mods_dict):
     data = []
     for nombre, info in mods_dict.items():
-        # Si no tiene ingredientes, guardamos una fila dummy o solo el precio
         if not info["ingredientes"]:
             data.append({
-                "Modificador": nombre,
-                "Precio Extra": info["precio_extra"],
-                "Ingrediente Base": "",
-                "Cantidad": 0
+                "Modificador": nombre, "Precio Extra": info["precio_extra"],
+                "Ingrediente Base": "", "Cantidad": 0
             })
         else:
             for ing, cant in info["ingredientes"].items():
                 data.append({
-                    "Modificador": nombre,
-                    "Precio Extra": info["precio_extra"],
-                    "Ingrediente Base": ing,
-                    "Cantidad": cant
+                    "Modificador": nombre, "Precio Extra": info["precio_extra"],
+                    "Ingrediente Base": ing, "Cantidad": cant
                 })
     return api_write(R2_MODIFICADORES, pd.DataFrame(data))
 
@@ -362,8 +363,6 @@ def leer_precios_desglose():
     return precios
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
-    # Nota: Esta función podría requerir actualización para soportar sub-recetas profundas,
-    # se mantiene la lógica base por simplicidad.
     ventas = leer_ventas(fecha_inicio, fecha_fin)
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
@@ -371,9 +370,13 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
 
     for venta in ventas:
         producto = venta.get('Producto')
+        # Limpiar nombre producto de posibles modificadores en el string
+        # (Esto es una simplificación, idealmente se guardaría el ID limpio)
+        prod_limpio = producto.split(" (")[0]
+        
         cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
-        if producto in recetas:
-            for ing_nom, cant_receta in recetas[producto]['ingredientes'].items():
+        if prod_limpio in recetas:
+            for ing_nom, cant_receta in recetas[prod_limpio]['ingredientes'].items():
                 ingredientes_utilizados[ing_nom] = ingredientes_utilizados.get(ing_nom, 0) + (cant_receta * cantidad_vendida)
 
     resultado = []
@@ -412,22 +415,63 @@ def mostrar_dashboard(f_inicio, f_fin):
     c4.metric("Transacciones", f"{total_transacciones}")
     st.markdown("---")
     
-    daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(Ventas=('Total Venta Neta', 'sum'), Ganancia=('Ganancia Neta', 'sum')).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
-    fig_daily = px.line(daily_summary, x='Fecha', y=['Ventas', 'Ganancia'], markers=True, color_discrete_sequence=['#4B2840', '#F1B48B'], template='plotly_white')
-    st.plotly_chart(fig_daily, use_container_width=True)
+    # Resumen diario
+    daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(
+        Ventas=('Total Venta Neta', 'sum'),
+        Ganancia=('Ganancia Neta', 'sum')
+    ).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
+    daily_summary['Fecha'] = pd.to_datetime(daily_summary['Fecha'])
     
+    # Lógica Semanal
+    daily_summary['Inicio_Semana'] = daily_summary['Fecha'] - pd.to_timedelta(daily_summary['Fecha'].dt.weekday, unit='D')
+    daily_summary['Fin_Semana'] = daily_summary['Inicio_Semana'] + pd.Timedelta(days=6)
+    
+    weekly_means = daily_summary.groupby('Inicio_Semana').agg(mean_ventas=('Ventas', 'mean'), mean_ganancia=('Ganancia', 'mean')).reset_index()
+    weekly_means['Fin_Semana'] = weekly_means['Inicio_Semana'] + pd.Timedelta(days=7)
+    
+    fig_daily = px.line(daily_summary, x='Fecha', y=['Ventas', 'Ganancia'], markers=True, color_discrete_sequence=['#4B2840', '#F1B48B'], template='plotly_white')
+    
+    # Líneas media semanal
+    for _, row in weekly_means.iterrows():
+        fig_daily.add_trace(go.Scatter(x=[row['Inicio_Semana'], row['Fin_Semana']], y=[row['mean_ventas'], row['mean_ventas']], mode="lines", line=dict(color="#1f77b4", width=1, dash="dot"), showlegend=False, hoverinfo="skip"))
+        fig_daily.add_trace(go.Scatter(x=[row['Inicio_Semana'], row['Fin_Semana']], y=[row['mean_ganancia'], row['mean_ganancia']], mode="lines", line=dict(color="#2ca02c", width=1, dash="dot"), showlegend=False, hoverinfo="skip"))
+    
+    st.plotly_chart(fig_daily, use_container_width=True)
+
+    # Análisis Productos
     st.subheader("Desempeño de Productos")
     col_g1, col_g2 = st.columns(2)
     product_summary = df_filtered.groupby('Producto').agg(Total_Venta=('Total Venta Neta', 'sum'), Total_Ganancia=('Ganancia Neta', 'sum'), Cantidad=('Cantidad', 'sum')).reset_index()
     
     with col_g1:
-        fig_prod = px.bar(product_summary.sort_values('Cantidad', ascending=False).head(10), x='Cantidad', y='Producto', orientation='h', title="Top 10 Productos (Volumen)", text_auto=True, template='plotly_white', color='Cantidad', color_continuous_scale='Purples')
+        fig_prod = px.bar(product_summary.sort_values('Cantidad', ascending=False).head(10), x='Cantidad', y='Producto', orientation='h', title="Top 10 (Volumen)", text_auto=True, template='plotly_white', color='Cantidad', color_continuous_scale='Purples')
         fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig_prod, use_container_width=True)
     with col_g2:
-        fig_gan = px.bar(product_summary.sort_values('Total_Ganancia', ascending=False).head(10), x='Total_Ganancia', y='Producto', orientation='h', title="Top 10 Productos (Ganancia $)", text_auto='.2s', template='plotly_white', color='Total_Ganancia', color_continuous_scale='Peach')
+        fig_gan = px.bar(product_summary.sort_values('Total_Ganancia', ascending=False).head(10), x='Total_Ganancia', y='Producto', orientation='h', title="Top 10 (Ganancia $)", text_auto='.2s', template='plotly_white', color='Total_Ganancia', color_continuous_scale='Peach')
         fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig_gan, use_container_width=True)
+
+    # Patrones Semanales
+    st.subheader("🔎 Patrones Semanales")
+    df_patron = df_filtered.copy()
+    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
+    df_patron['Dia_Nombre'] = df_patron['Fecha_DT'].dt.day_name().map(DIAS_ESP)
+    
+    ventas_diarias = df_patron.groupby(['Fecha_DT', 'Dia_Nombre'], as_index=False).agg({'Total Venta Neta': 'sum'})
+    ventas_diarias = ventas_diarias[ventas_diarias['Total Venta Neta'] > 0]
+    patron_promedio = ventas_diarias.groupby('Dia_Nombre', as_index=False)['Total Venta Neta'].mean()
+    patron_promedio['Dia_Nombre'] = pd.Categorical(patron_promedio['Dia_Nombre'], categories=ORDEN_DIAS, ordered=True)
+    patron_promedio = patron_promedio.sort_values('Dia_Nombre')
+    
+    fig_prom = px.bar(patron_promedio, x='Dia_Nombre', y='Total Venta Neta', text_auto='.2s', template='plotly_white', title="Venta Promedio por Día", color='Total Venta Neta', color_continuous_scale='bluyl')
+    st.plotly_chart(fig_prom, use_container_width=True)
+
+    # Tabla Resumen
+    st.subheader("Resumen Semanal")
+    weekly = df_filtered.groupby('Inicio_Semana').agg({'Total Venta Neta': 'sum', 'Ganancia Neta': 'sum', 'Cantidad': 'sum'}).reset_index().sort_values('Inicio_Semana', ascending=False)
+    weekly['Periodo'] = weekly['Inicio_Semana'].apply(lambda x: f"Lun {x.strftime('%d/%m')} - Dom {(x + datetime.timedelta(days=6)).strftime('%d/%m')}")
+    st.dataframe(weekly[['Periodo', 'Total Venta Neta', 'Ganancia Neta', 'Cantidad']].style.format({'Total Venta Neta': '${:,.2f}', 'Ganancia Neta': '${:,.2f}'}), use_container_width=True, hide_index=True)
 
 def mostrar_ingredientes():
     st.markdown('<div class="section-header">🧪 Gestión de Ingredientes</div>', unsafe_allow_html=True)
@@ -477,7 +521,7 @@ def mostrar_recetas():
     recetas = leer_recetas()
     ingredientes = leer_ingredientes_base()
     
-    # LISTA COMBINADA PARA SELECTOR (Ingredientes + Recetas existentes)
+    # Lista combinada para el selector (Ingredientes + Recetas existentes)
     lista_opciones = [i['nombre'] for i in ingredientes] + list(recetas.keys())
     lista_opciones = sorted(list(set(lista_opciones)))
 
@@ -497,50 +541,48 @@ def mostrar_recetas():
             st.subheader(f"Editando: {sel_receta}")
             datos = recetas[sel_receta]
             
-            # MOSTRAR INGREDIENTES
             if datos['ingredientes']:
                 lista_items = []
                 for ing, cant in datos['ingredientes'].items():
-                    # Intentar buscar en ingredientes base
+                    # Buscar en ingredientes base o en recetas
                     info = next((i for i in ingredientes if i['nombre'] == ing), None)
-                    costo_u = info['costo_receta'] if info else 0
-                    
-                    # Si no es ingrediente base, buscar si es sub-receta (costo total de esa receta)
-                    tipo = "Ingrediente"
-                    if not info and ing in recetas:
+                    if info:
+                        costo_u = info['costo_receta']
+                        tipo = "Ingrediente"
+                    elif ing in recetas:
                         costo_u = recetas[ing]['costo_total']
                         tipo = "Sub-Receta"
+                    else:
+                        costo_u = 0
+                        tipo = "Desconocido"
 
                     costo_parcial = costo_u * cant
                     lista_items.append({'Tipo': tipo, 'Item': ing, 'Cantidad': cant, 'Costo': costo_parcial})
                 
-                df_show = pd.DataFrame(lista_items)
-                st.dataframe(df_show.style.format({'Costo': "${:.2f}"}), use_container_width=True)
+                st.dataframe(pd.DataFrame(lista_items).style.format({'Costo': "${:.2f}"}), use_container_width=True)
                 
                 to_del = st.selectbox("Eliminar item:", [""] + list(datos['ingredientes'].keys()))
                 if st.button("Eliminar") and to_del:
                     del recetas[sel_receta]['ingredientes'][to_del]; guardar_recetas(recetas); st.rerun()
             else: st.info("Receta vacía.")
             
-            # COSTO TOTAL (Calculado al vuelo en leer_recetas)
             st.metric("Costo Estimado Receta", f"${datos.get('costo_total', 0):.2f}")
             st.divider()
             
-            # AGREGAR INGREDIENTE O SUB-RECETA
             c1, c2, c3 = st.columns([2,1,1])
-            # Filtramos para que una receta no se contenga a si misma (evitar recursión infinita simple)
+            # Filtrar para evitar auto-referencia simple
             opciones_validas = [o for o in lista_opciones if o != sel_receta]
             
             ing_sel = c1.selectbox("Ingrediente o Sub-Receta", opciones_validas)
             cant_sel = c2.number_input("Cantidad", min_value=0.0, step=0.1)
             if c3.button("Agregar"):
                 if cant_sel > 0:
-                    recetas[sel_receta]['ingredientes'][ing_sel] = cant_sel
-                    guardar_recetas(recetas)
-                    st.rerun()
+                    recetas[sel_receta]['ingredientes'][ing_sel] = cant_sel; guardar_recetas(recetas); st.rerun()
 
 def mostrar_modificadores():
     st.markdown('<div class="section-header">🧩 Modificadores (Extras)</div>', unsafe_allow_html=True)
+    st.caption("Define extras que se puedan cobrar al cliente y descontar del inventario (ej. 'Extra Queso').")
+    
     mods = leer_modificadores()
     ingredientes = leer_ingredientes_base()
     
@@ -548,13 +590,12 @@ def mostrar_modificadores():
     
     with col_list:
         st.subheader("Lista")
-        new_mod = st.text_input("Nuevo Modificador (ej. Extra Queso)")
+        new_mod = st.text_input("Nuevo Modificador")
         if st.button("Crear Modificador") and new_mod:
             if new_mod not in mods:
                 mods[new_mod] = {"precio_extra": 0.0, "ingredientes": {}}
                 guardar_modificadores(mods)
                 st.rerun()
-        
         sel_mod = st.radio("Editar:", list(mods.keys()))
     
     with col_det:
@@ -562,35 +603,26 @@ def mostrar_modificadores():
             st.subheader(f"Editando: {sel_mod}")
             curr = mods[sel_mod]
             
-            # Editar precio extra
-            nuevo_precio = st.number_input("Precio Extra al cliente ($)", value=curr["precio_extra"])
+            # Editar precio
+            nuevo_precio = st.number_input("Precio Extra al Cliente ($)", value=curr["precio_extra"])
             if nuevo_precio != curr["precio_extra"]:
                 curr["precio_extra"] = nuevo_precio
                 if st.button("Actualizar Precio"):
-                    guardar_modificadores(mods)
-                    st.success("Precio actualizado")
+                    guardar_modificadores(mods); st.success("Actualizado"); st.rerun()
             
-            st.markdown("#### Ingredientes del Modificador")
-            st.caption("Estos ingredientes se descontarán del inventario al vender este extra.")
-            
-            # Lista ingredientes
+            st.markdown("#### Ingredientes a descontar")
             if curr["ingredientes"]:
                 l = [{"Ingrediente": k, "Cantidad": v} for k,v in curr["ingredientes"].items()]
                 st.dataframe(pd.DataFrame(l), use_container_width=True)
                 del_ing = st.selectbox("Borrar ingrediente:", [""] + list(curr["ingredientes"].keys()))
                 if st.button("Borrar") and del_ing:
-                    del curr["ingredientes"][del_ing]
-                    guardar_modificadores(mods)
-                    st.rerun()
+                    del curr["ingredientes"][del_ing]; guardar_modificadores(mods); st.rerun()
             
-            # Agregar ingrediente
             c1, c2, c3 = st.columns([2,1,1])
             add_ing = c1.selectbox("Agregar Ingrediente Base:", [i["nombre"] for i in ingredientes])
             add_cant = c2.number_input("Cantidad:", min_value=0.0, step=0.1)
             if c3.button("Añadir"):
-                curr["ingredientes"][add_ing] = add_cant
-                guardar_modificadores(mods)
-                st.rerun()
+                curr["ingredientes"][add_ing] = add_cant; guardar_modificadores(mods); st.rerun()
 
 def mostrar_precios():
     st.markdown('<div class="section-header">💰 Análisis de Precios</div>', unsafe_allow_html=True)
@@ -657,14 +689,14 @@ def mostrar_ventas(f_inicio, f_fin):
         
         recetas = leer_recetas()
         precios = leer_precios_desglose()
-        modificadores = leer_modificadores() # Cargar modificadores
+        modificadores = leer_modificadores()
         
         with st.form("add_form"):
             prod = st.selectbox("Producto", [""] + list(recetas.keys()))
             
-            # Selección múltiple de modificadores
+            # Selector de Modificadores
             mods_keys = list(modificadores.keys())
-            mods_sel = st.multiselect("Modificadores / Extras:", mods_keys)
+            mods_sel = st.multiselect("Extras / Modificadores:", mods_keys)
             
             c1, c2 = st.columns(2)
             cant = c1.number_input("Cant", min_value=1, value=1)
@@ -675,7 +707,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 if prod:
                     p_base = precios.get(prod, {}).get('precio_venta', 0)
                     
-                    # Calcular precio extra de modificadores
+                    # Calcular precio de extras
                     costo_extra_mods = 0
                     lista_mods_detalle = []
                     for m in mods_sel:
@@ -708,12 +740,9 @@ def mostrar_ventas(f_inicio, f_fin):
                     with c_det:
                         icon = "💳" if item['Es Tarjeta'] else "💵"
                         st.markdown(f"**{item['Producto']}** x{item['Cantidad']} | {icon}")
-                        
-                        # Mostrar modificadores si existen
                         if item['Modificadores']:
                             txt_mods = ", ".join([f"{m['nombre']} (+${m['precio']})" for m in item['Modificadores']])
-                            st.caption(f"🧩 Extras: {txt_mods}")
-                            
+                            st.caption(f"🧩 {txt_mods}")
                         st.caption(f"${subtotal:.2f} (Desc: {item['Descuento %']}%)")
                     with c_del:
                         if st.button("❌", key=f"del_{i}"):
@@ -727,8 +756,22 @@ def mostrar_ventas(f_inicio, f_fin):
                 fecha_hoy = datetime.date.today().strftime('%d/%m/%Y')
                 inventario = leer_inventario()
                 
+                # Función para descontar inventario recursivamente
+                def descontar_recursivo(nombre_item, cantidad_necesaria):
+                    # 1. Si es ingrediente directo en inventario
+                    if nombre_item in inventario:
+                        inventario[nombre_item]['stock_actual'] -= cantidad_necesaria
+                        if inventario[nombre_item]['stock_actual'] < 0: inventario[nombre_item]['stock_actual'] = 0
+                    
+                    # 2. Si es una Sub-Receta
+                    elif nombre_item in recetas:
+                        sub_r = recetas[nombre_item]
+                        for sub_ing, sub_cant in sub_r['ingredientes'].items():
+                            # Llamada recursiva (multiplicamos la cant de la sub-receta por la cant necesaria)
+                            descontar_recursivo(sub_ing, sub_cant * cantidad_necesaria)
+                
                 for item in st.session_state.carrito:
-                    p = item['Producto']; q = item['Cantidad']; 
+                    p = item['Producto']; q = item['Cantidad']
                     pu = item['Precio Unitario Final']; d = item['Descuento %']
                     es_tarjeta = item['Es Tarjeta']
                     
@@ -737,52 +780,31 @@ def mostrar_ventas(f_inicio, f_fin):
                     subtotal_venta = total_bruto - monto_desc
                     comision = subtotal_venta * (COMISION_TARJETA / 100) if es_tarjeta else 0.0
                     
-                    # --- CÁLCULO DE COSTO Y DESCUENTO DE INVENTARIO ---
                     costo_total_item = 0
                     
-                    # 1. Descontar receta principal (con soporte Sub-receta)
+                    # 1. Procesar Producto Principal
                     if p in recetas:
                         costo_total_item += (recetas[p]['costo_total'] * q)
-                        
+                        # Descontar sus ingredientes (o sub-recetas)
                         for ing_nom, cant_receta in recetas[p]['ingredientes'].items():
-                            total_necesario = cant_receta * q
-                            
-                            # A. Si el ingrediente está en inventario, descontar directo
-                            if ing_nom in inventario:
-                                inventario[ing_nom]['stock_actual'] -= total_necesario
-                                if inventario[ing_nom]['stock_actual'] < 0: inventario[ing_nom]['stock_actual'] = 0
-                            
-                            # B. Si NO está en inventario, ¿es una Sub-Receta?
-                            elif ing_nom in recetas:
-                                # Descontar los ingredientes de la sub-receta recursivamente
-                                # (Simplificado a 1 nivel de profundidad para este snippet)
-                                sub_r = recetas[ing_nom]
-                                for sub_ing, sub_cant in sub_r['ingredientes'].items():
-                                    if sub_ing in inventario:
-                                        inventario[sub_ing]['stock_actual'] -= (sub_cant * total_necesario)
-                                        if inventario[sub_ing]['stock_actual'] < 0: inventario[sub_ing]['stock_actual'] = 0
+                            descontar_recursivo(ing_nom, cant_receta * q)
 
-                    # 2. Descontar ingredientes de modificadores
+                    # 2. Procesar Modificadores
                     for mod in item['Modificadores']:
                         mod_data = modificadores.get(mod['nombre'])
                         if mod_data:
-                            # Sumar costo de ingredientes del modificador al costo del producto?
-                            # Para simplificar ganancia, asumimos que el modificador tiene margen incluido en precio extra
-                            # Pero sí descontamos inventario.
+                            # Descontar ingredientes del modificador
                             for m_ing, m_cant in mod_data["ingredientes"].items():
-                                if m_ing in inventario:
-                                    inventario[m_ing]['stock_actual'] -= (m_cant * q)
-                                    if inventario[m_ing]['stock_actual'] < 0: inventario[m_ing]['stock_actual'] = 0
+                                descontar_recursivo(m_ing, m_cant * q)
 
                     total_neto = subtotal_venta - comision
                     ganancia = total_neto - costo_total_item
                     
-                    # Guardar registro
                     mods_str = ", ".join([m['nombre'] for m in item['Modificadores']])
-                    nombre_prod_ticket = f"{p} ({mods_str})" if mods_str else p
+                    nombre_ticket = f"{p} (+ {mods_str})" if mods_str else p
 
                     ventas_nuevas.append({
-                        'Fecha': fecha_hoy, 'Producto': nombre_prod_ticket, 'Cantidad': q,
+                        'Fecha': fecha_hoy, 'Producto': nombre_ticket, 'Cantidad': q,
                         'Precio Unitario': pu, 'Total Venta Neta': total_bruto,
                         'Descuento (%)': d, 'Descuento ($)': monto_desc,
                         'Costo Total': costo_total_item, 'Ganancia Bruta': subtotal_venta - costo_total_item,
@@ -811,7 +833,6 @@ def mostrar_ventas(f_inicio, f_fin):
 def mostrar_inventario():
     st.markdown('<div class="section-header">📦 Inventario</div>', unsafe_allow_html=True)
     inv = leer_inventario(); ings = leer_ingredientes_base()
-    # Asegurar que todos los ingredientes base estén en inventario
     for i in ings:
         if i['nombre'] not in inv: inv[i['nombre']] = {'stock_actual': 0.0, 'min': 0.0, 'max': 0.0}
             
