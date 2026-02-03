@@ -966,15 +966,17 @@ def mostrar_ventas(f_inicio, f_fin):
     if 'temp_mods' not in st.session_state: st.session_state.temp_mods = {}
  
     col_pos, col_hist = st.columns([2, 3])
-        with st.expander("📊 Resumen Rápido", expanded=False):
-        cg1, cg2 = st.columns(2)
-        with cg1:
-            if 'Forma Pago' in ventas_df.columns:
-                st.plotly_chart(px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), values='Total Venta Neta', names='Forma Pago', hole=.5, color_discrete_sequence=["#D4D4D4", "#95E9BF"]), use_container_width=True)
-        with cg2:
-            venta_t = ventas_df['Total Venta Neta'].sum(); ganancia_t = ventas_df['Ganancia Neta'].sum()
-            st.plotly_chart(px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, venta_t - ganancia_t], hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"]), use_container_width=True)
-
+    # GRÁFICOS MINI
+    if es_admin and not ventas_df.empty:
+         with st.expander("📊 Resumen Rápido", expanded=False):
+             cg1, cg2 = st.columns(2)
+             with cg1:
+                 if 'Forma Pago' in ventas_df.columns:
+                     st.plotly_chart(px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), values='Total Venta Neta', names='Forma Pago', hole=.5, color_discrete_sequence=["#D4D4D4", "#95E9BF"]), use_container_width=True)
+             with cg2:
+                 venta_t = ventas_df['Total Venta Neta'].sum(); ganancia_t = ventas_df['Ganancia Neta'].sum()
+                 st.plotly_chart(px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, venta_t - ganancia_t], hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"]), use_container_width=True)
+   
     with col_pos:
         st.subheader("➕ Nueva Orden")
         
