@@ -966,16 +966,6 @@ def mostrar_ventas(f_inicio, f_fin):
     if 'temp_mods' not in st.session_state: st.session_state.temp_mods = {}
  
     col_pos, col_hist = st.columns([2, 3])
-    # GRÁFICOS MINI
-    if es_admin: 
-         with st.expander("📊 Resumen Rápido", expanded=False):
-             cg1, cg2 = st.columns(2)
-             with cg1:
-                 if 'Forma Pago' in ventas_df.columns:
-                     st.plotly_chart(px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), values='Total Venta Neta', names='Forma Pago', hole=.5, color_discrete_sequence=["#D4D4D4", "#95E9BF"]), use_container_width=True)
-             with cg2:
-                 venta_t = ventas_df['Total Venta Neta'].sum(); ganancia_t = ventas_df['Ganancia Neta'].sum()
-                 st.plotly_chart(px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, venta_t - ganancia_t], hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"]), use_container_width=True)
    
     with col_pos:
         st.subheader("➕ Nueva Orden")
@@ -1142,14 +1132,39 @@ def mostrar_ventas(f_inicio, f_fin):
                     st.toast("✅ Venta registrada")
                     st.rerun()
 
+  # --- COLUMNA DERECHA: HISTORIAL Y GRÁFICOS ---
     with col_hist:
-        # (El historial se mantiene igual)
-        st.subheader("📜 Historial")
+        st.subheader("📜 Historial y Resumen")
         ventas_hist = leer_ventas(f_inicio, f_fin)
+        
         if ventas_hist:
-            df_h = pd.DataFrame(ventas_hist)
-            if 'Fecha_DT' in df_h.columns: df_h = df_h.sort_values('Fecha_DT', ascending=False)
-            st.dataframe(df_h[['Fecha', 'Producto', 'Cantidad', 'Total Venta Neta', 'Forma Pago']], use_container_width=True, hide_index=True)
+            ventas_df = pd.DataFrame(ventas_hist)
+            
+            # --- GRÁFICOS MINI (SOLO ADMIN) ---
+            if es_admin:
+                with st.expander("📊 Resumen Rápido", expanded=True):
+                    cg1, cg2 = st.columns(2)
+                    with cg1:
+                        if 'Forma Pago' in ventas_df.columns:
+                            fig_pago = px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), 
+                                            values='Total Venta Neta', names='Forma Pago', 
+                                            hole=.5, color_discrete_sequence=["#D4D4D4", "#95E9BF"],
+                                            title="Pago")
+                            st.plotly_chart(fig_pago, use_container_width=True)
+                    with cg2:
+                        venta_t = ventas_df['Total Venta Neta'].sum()
+                        ganancia_t = ventas_df['Ganancia Neta'].sum()
+                        fig_ganancia = px.pie(names=['Ganancia', 'Costos'], 
+                                            values=[ganancia_t, venta_t - ganancia_t], 
+                                            hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"],
+                                            title="Rentabilidad")
+                        st.plotly_chart(fig_ganancia, use_container_width=True)
+            
+            # Tabla de historial
+            st.dataframe(ventas_df[['Fecha', 'Producto', 'Cantidad', 'Total Venta Neta', 'Forma Pago']], 
+                         use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay ventas registradas en este rango.")
             
 def mostrar_inventario():
     st.markdown('<div class="section-header">📦 Inventario</div>', unsafe_allow_html=True)
