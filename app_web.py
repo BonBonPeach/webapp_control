@@ -570,13 +570,15 @@ def mostrar_dashboard(f_inicio, f_fin):
             Ganancia=('Ganancia Neta', 'sum')
         )
         .reset_index()
-        .rename(columns={'Fecha_DT': 'Fecha'})
     )
     
+    daily_summary.columns = ['Fecha', 'Ventas', 'Ganancia']
     daily_summary['Fecha'] = pd.to_datetime(daily_summary['Fecha'])
     
-    # --- Definir semana ISO iniciando en LUNES ---
-    daily_summary['Semana'] = daily_summary['Fecha'].dt.to_period('W-MON')
+    # --- Calcular lunes real de cada semana ---
+    daily_summary['Lunes'] = daily_summary['Fecha'] - pd.to_timedelta(
+        daily_summary['Fecha'].dt.weekday, unit='D'
+    )
     
     # --- Gráfico base ---
     fig_daily = px.line(
@@ -584,14 +586,14 @@ def mostrar_dashboard(f_inicio, f_fin):
         x='Fecha',
         y=['Ventas', 'Ganancia'],
         markers=True,
-        color_discrete_sequence=['#4B2840', '#F1B48B'],  # colores originales
+        color_discrete_sequence=['#4B2840', '#F1B48B'],
         template='plotly_white'
     )
     
-    # --- Cálculo de medias semanales (solo días con venta) ---
+    # --- Medias semanales (lunes a domingo) ---
     weekly_means = (
         daily_summary
-        .groupby('Semana')
+        .groupby('Lunes')
         .agg(
             mean_ventas=('Ventas', 'mean'),
             mean_ganancia=('Ganancia', 'mean')
@@ -599,15 +601,14 @@ def mostrar_dashboard(f_inicio, f_fin):
         .reset_index()
     )
     
-    # --- Dibujar líneas de media semanal (LUNES → DOMINGO) ---
     for _, row in weekly_means.iterrows():
-        inicio_semana = row['Semana'].start_time
-        fin_semana = row['Semana'].end_time
+        inicio = row['Lunes']
+        fin = inicio + pd.Timedelta(days=6)
     
         # Media semanal Ventas (AZUL)
         fig_daily.add_trace(
             go.Scatter(
-                x=[inicio_semana, fin_semana],
+                x=[inicio, fin],
                 y=[row['mean_ventas'], row['mean_ventas']],
                 mode="lines",
                 line=dict(color="#1f77b4", width=1),
@@ -619,7 +620,7 @@ def mostrar_dashboard(f_inicio, f_fin):
         # Media semanal Ganancia (VERDE)
         fig_daily.add_trace(
             go.Scatter(
-                x=[inicio_semana, fin_semana],
+                x=[inicio, fin],
                 y=[row['mean_ganancia'], row['mean_ganancia']],
                 mode="lines",
                 line=dict(color="#2ca02c", width=1),
@@ -628,21 +629,16 @@ def mostrar_dashboard(f_inicio, f_fin):
             )
         )
     
-    # --- Líneas verticales de control (LUNES) ---
-    mondays = daily_summary[
-        daily_summary['Fecha'].dt.weekday == 0
-    ]['Fecha'].unique()
-    
-    for monday in mondays:
+    # --- Líneas verticales (lunes reales) ---
+    for lunes in weekly_means['Lunes']:
         fig_daily.add_vline(
-            x=monday,
+            x=lunes,
             line_width=1,
             line_dash="dot",
             line_color="gray",
             opacity=0.5
         )
     
-    # --- Layout final ---
     fig_daily.update_layout(
         legend_title_text="Indicadores",
         hovermode="x unified"
@@ -650,7 +646,6 @@ def mostrar_dashboard(f_inicio, f_fin):
     
     st.plotly_chart(fig_daily, use_container_width=True)
 
-   
     # 3. Análisis de Productos
     st.subheader("Desempeño de Productos")
     col_g1, col_g2 = st.columns(2)
