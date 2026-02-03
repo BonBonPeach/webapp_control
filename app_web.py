@@ -561,26 +561,48 @@ def mostrar_dashboard(f_inicio, f_fin):
     # --- GRÁFICO 1: TENDENCIA DIARIA CON CONTROL SEMANAL ---
     st.subheader("Tendencia de Ventas (Diario)")
     
-    # --- Resumen diario ---
+    # ===============================
+    # Resumen diario
+    # ===============================
     daily_summary = (
         df_filtered
-        .groupby(df_filtered['Fecha_DT'].dt.date)
-        .agg(
-            Ventas=('Total Venta Neta', 'sum'),
-            Ganancia=('Ganancia Neta', 'sum')
-        )
-        .reset_index()
+            .groupby(df_filtered['Fecha_DT'].dt.date)
+            .agg(
+                Ventas=('Total Venta Neta', 'sum'),
+                Ganancia=('Ganancia Neta', 'sum')
+            )
+            .reset_index()
+            .rename(columns={'Fecha_DT': 'Fecha'})
     )
     
-    daily_summary.columns = ['Fecha', 'Ventas', 'Ganancia']
     daily_summary['Fecha'] = pd.to_datetime(daily_summary['Fecha'])
     
-    # --- Calcular lunes real de cada semana ---
-    daily_summary['Lunes'] = daily_summary['Fecha'] - pd.to_timedelta(
+    # ===============================
+    # Definición explícita de semana (LUNES → DOMINGO)
+    # ===============================
+    daily_summary['Inicio_Semana'] = daily_summary['Fecha'] - pd.to_timedelta(
         daily_summary['Fecha'].dt.weekday, unit='D'
     )
+    daily_summary['Fin_Semana'] = daily_summary['Inicio_Semana'] + pd.Timedelta(days=6)
     
-    # --- Gráfico base ---
+    # ===============================
+    # Medias semanales
+    # ===============================
+    weekly_means = (
+        daily_summary
+            .groupby('Inicio_Semana')
+            .agg(
+                mean_ventas=('Ventas', 'mean'),
+                mean_ganancia=('Ganancia', 'mean')
+            )
+            .reset_index()
+    )
+    
+    weekly_means['Fin_Semana'] = weekly_means['Inicio_Semana'] + pd.Timedelta(days=6)
+    
+    # ===============================
+    # Gráfico base
+    # ===============================
     fig_daily = px.line(
         daily_summary,
         x='Fecha',
@@ -590,49 +612,51 @@ def mostrar_dashboard(f_inicio, f_fin):
         template='plotly_white'
     )
     
-    # --- Medias semanales (lunes a domingo) ---
-    weekly_means = (
-        daily_summary
-        .groupby('Lunes')
-        .agg(
-            mean_ventas=('Ventas', 'mean'),
-            mean_ganancia=('Ganancia', 'mean')
-        )
-        .reset_index()
-    )
-    
+    # ===============================
+    # Líneas de media semanal (PUNTEADAS)
+    # ===============================
     for _, row in weekly_means.iterrows():
-        inicio = row['Lunes']
-        fin = inicio + pd.Timedelta(days=6)
     
-        # Media semanal Ventas (AZUL)
+        # Media semanal Ventas
         fig_daily.add_trace(
             go.Scatter(
-                x=[inicio, fin],
+                x=[row['Inicio_Semana'], row['Fin_Semana']],
                 y=[row['mean_ventas'], row['mean_ventas']],
                 mode="lines",
-                line=dict(color="#1f77b4", width=1),
+                line=dict(
+                    color="#1f77b4",
+                    width=1,
+                    dash="dot"   # <<< punteado
+                ),
                 showlegend=False,
                 hoverinfo="skip"
             )
         )
     
-        # Media semanal Ganancia (VERDE)
+        # Media semanal Ganancia
         fig_daily.add_trace(
             go.Scatter(
-                x=[inicio, fin],
+                x=[row['Inicio_Semana'], row['Fin_Semana']],
                 y=[row['mean_ganancia'], row['mean_ganancia']],
                 mode="lines",
-                line=dict(color="#2ca02c", width=1),
+                line=dict(
+                    color="#2ca02c",
+                    width=1,
+                    dash="dot"   # <<< punteado
+                ),
                 showlegend=False,
                 hoverinfo="skip"
             )
         )
     
-    # --- Líneas verticales (lunes reales) ---
-    for lunes in weekly_means['Lunes']:
+    # ===============================
+    # Líneas verticales (lunes)
+    # ===============================
+    mondays = weekly_means['Inicio_Semana']
+    
+    for monday in mondays:
         fig_daily.add_vline(
-            x=lunes,
+            x=monday,
             line_width=1,
             line_dash="dot",
             line_color="gray",
