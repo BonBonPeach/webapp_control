@@ -550,26 +550,102 @@ def mostrar_dashboard(f_inicio, f_fin):
     
     # METRICO NUEVO: TICKET PROMEDIO
     ticket_promedio = total_ventas / total_transacciones if total_transacciones > 0 else 0
-    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Ventas Totales", f"${total_ventas:,.2f}")
     c2.metric("Ganancia Neta", f"${total_ganancia:,.2f}")
-    c3.metric("Ticket Promedio", f"${ticket_promedio:,.2f}") # Nuevo
+    c3.metric("Ticket Promedio", f"${ticket_promedio:,.2f}")
     c4.metric("Transacciones", f"{total_transacciones}")
     
     st.markdown("---")
     
-    # --- GRÁFICO 1: TENDENCIA DIARIA ---
+    # --- GRÁFICO 1: TENDENCIA DIARIA CON CONTROL SEMANAL ---
     st.subheader("Tendencia de Ventas (Diario)")
-    daily_summary = df_filtered.groupby(df_filtered['Fecha_DT'].dt.date).agg(
-        Ventas=('Total Venta Neta', 'sum'),
-        Ganancia=('Ganancia Neta', 'sum')
-    ).reset_index().rename(columns={'Fecha_DT': 'Fecha'})
     
-    fig_daily = px.line(daily_summary, x='Fecha', y=['Ventas', 'Ganancia'], 
-                        markers=True, color_discrete_sequence=['#4B2840', '#F1B48B'], template='plotly_white')
+    # Resumen diario
+    daily_summary = (
+        df_filtered
+        .groupby(df_filtered['Fecha_DT'].dt.date)
+        .agg(
+            Ventas=('Total Venta Neta', 'sum'),
+            Ganancia=('Ganancia Neta', 'sum')
+        )
+        .reset_index()
+        .rename(columns={'Fecha_DT': 'Fecha'})
+    )
+    
+    daily_summary['Fecha'] = pd.to_datetime(daily_summary['Fecha'])
+    
+    # Semana ISO (año-semana)
+    daily_summary['Semana'] = daily_summary['Fecha'].dt.to_period('W-MON')
+    
+    # Media semanal (solo días con venta > 0)
+    weekly_mean = (
+        daily_summary[daily_summary['Ventas'] > 0]
+        .groupby('Semana')
+        .agg(
+            Media_Ventas=('Ventas', 'mean'),
+            Media_Ganancia=('Ganancia', 'mean'),
+            Fecha_Inicio=('Fecha', 'min'),
+            Fecha_Fin=('Fecha', 'max')
+        )
+        .reset_index()
+    )
+    
+    # Gráfico base
+    fig_daily = px.line(
+        daily_summary,
+        x='Fecha',
+        y=['Ventas', 'Ganancia'],
+        markers=True,
+        color_discrete_sequence=['#4B2840', '#F1B48B'],
+        template='plotly_white'
+    )
+    
+    # --- Líneas verticales (inicio de semana - lunes) ---
+    mondays = daily_summary[
+        daily_summary['Fecha'].dt.weekday == 0
+    ]['Fecha'].unique()
+    
+    for monday in mondays:
+        fig_daily.add_vline(
+            x=monday,
+            line_width=1,
+            line_dash="dot",
+            line_color="gray",
+            opacity=0.5
+        )
+    
+    # --- Medias semanales (líneas horizontales por etapa) ---
+    for _, row in weekly_mean.iterrows():
+        # Ventas
+        fig_daily.add_shape(
+            type="line",
+            x0=row['Fecha_Inicio'],
+            x1=row['Fecha_Fin'],
+            y0=row['Media_Ventas'],
+            y1=row['Media_Ventas'],
+            line=dict(color='#4B2840', width=3, dash='dash')
+        )
+    
+        # Ganancia
+        fig_daily.add_shape(
+            type="line",
+            x0=row['Fecha_Inicio'],
+            x1=row['Fecha_Fin'],
+            y0=row['Media_Ganancia'],
+            y1=row['Media_Ganancia'],
+            line=dict(color='#F1B48B', width=3, dash='dash')
+        )
+    
+    fig_daily.update_layout(
+        legend_title_text="Indicadores",
+        hovermode="x unified"
+    )
+    
     st.plotly_chart(fig_daily, use_container_width=True)
+
     
+   
     # 3. Análisis de Productos
     st.subheader("Desempeño de Productos")
     col_g1, col_g2 = st.columns(2)
@@ -618,10 +694,6 @@ def mostrar_dashboard(f_inicio, f_fin):
     st.caption(
         "Compara el comportamiento diario entre semanas completas para detectar patrones repetitivos."
     )
-    
-    # ===============================
-    # PROMEDIO SEMANAL CORRECTO
-    # ===============================
     
     df_patron = df_filtered.copy()
      
