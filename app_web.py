@@ -1066,20 +1066,20 @@ def mostrar_ventas(f_inicio, f_fin):
                 cg1, cg2 = st.columns(2)
                 # Gráfica 1
                 with cg1:
-                if 'Forma Pago' in ventas_df.columns:
-                    fig_pago = px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), 
-                                    values='Total Venta Neta', names='Forma Pago', hole=.5, 
-                                    color_discrete_sequence=["#D4D4D4", "#95E9BF"], title="Métodos de Pago")
-                    st.plotly_chart(fig_pago, use_container_width=True)
+                    if 'Forma Pago' in ventas_df.columns:
+                        fig_pago = px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), 
+                                        values='Total Venta Neta', names='Forma Pago', hole=.5, 
+                                        color_discrete_sequence=["#D4D4D4", "#95E9BF"], title="Métodos de Pago")
+                        st.plotly_chart(fig_pago, use_container_width=True)
                 
                 st.divider()
                 with cg2:
-                # Gráfica 2
-                venta_t = ventas_df['Total Venta Neta'].sum()
-                ganancia_t = ventas_df['Ganancia Neta'].sum()
-                fig_rent = px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, max(0, venta_t - ganancia_t)], 
-                                 hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"], title="Rentabilidad")
-                st.plotly_chart(fig_rent, use_container_width=True)
+                    # Gráfica 2
+                    venta_t = ventas_df['Total Venta Neta'].sum()
+                    ganancia_t = ventas_df['Ganancia Neta'].sum()
+                    fig_rent = px.pie(names=['Ganancia', 'Costos'], values=[ganancia_t, max(0, venta_t - ganancia_t)], 
+                                     hole=.5, color_discrete_sequence=["#80A6F8", "#A2FF9A"], title="Rentabilidad")
+                    st.plotly_chart(fig_rent, use_container_width=True)
         
         # Tabla de historial al final
         st.markdown("##### Detalle de Ventas")
