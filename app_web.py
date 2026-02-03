@@ -807,7 +807,7 @@ def mostrar_dashboard(f_inicio, f_fin):
             'Total Venta Neta': 'Venta Promedio ($)'
         },
         color='Total Venta Neta',
-        color_continuous_scale='Peach'
+        color_continuous_scale='rdylgn'
     )
 
     st.plotly_chart(fig_prom, use_container_width=True)
