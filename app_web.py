@@ -633,6 +633,25 @@ def mostrar_dashboard(f_inicio, f_fin):
         lambda x: x - datetime.timedelta(days=x.weekday())
     )
     
+    # ⛔ Filtrar días sin venta real
+    df_prom = df_patron[df_patron['Total Venta Neta'] > 0]
+    
+    patron_promedio = (
+        df_prom
+        .groupby('Dia_Nombre', as_index=False)['Total Venta Neta']
+        .mean()
+    )
+    
+    # Forzar orden Lunes → Domingo
+    patron_promedio['Dia_Nombre'] = pd.Categorical(
+        patron_promedio['Dia_Nombre'],
+        categories=ORDEN_DIAS,
+        ordered=True
+    )
+    
+    patron_promedio = patron_promedio.sort_values('Dia_Nombre')
+
+    
     # Etiqueta corta para leyenda
     df_patron['Semana_Label'] = df_patron['Inicio_Semana'].dt.strftime('%d/%m')
     
@@ -668,40 +687,39 @@ def mostrar_dashboard(f_inicio, f_fin):
     st.plotly_chart(fig_patron, use_container_width=True)
 
 
-    st.subheader("🔎 Patrones Semanales (Promedio)")
-    st.caption("Promedio de ventas por día de la semana para detectar días fuertes y débiles.")
-    
-    df_patron = df_filtered.copy()
-    df_patron['Dia_Nombre'] = df_patron['Fecha_DT'].dt.day_name().map(DIAS_ESP)
-    
-    patron_avg = (
-        df_patron
-        .groupby('Dia_Nombre')['Total Venta Neta']
-        .mean()
-        .reindex(ORDEN_DIAS)
-        .reset_index()
-    )
-    
-    fig_patron = px.line(
-        patron_avg,
+    st.subheader("📊 Venta Promedio por Día (solo días con ventas)")
+
+    fig_prom = px.line(
+        patron_promedio,
         x='Dia_Nombre',
         y='Total Venta Neta',
         markers=True,
         template='plotly_white',
-        labels={'Total Venta Neta': 'Venta Promedio ($)', 'Dia_Nombre': 'Día'}
+        labels={
+            'Dia_Nombre': 'Día de la semana',
+            'Total Venta Neta': 'Venta Promedio ($)'
+        }
     )
     
-    st.plotly_chart(fig_patron, use_container_width=True)
+    fig_prom.update_traces(line=dict(width=3))
+    st.plotly_chart(fig_prom, use_container_width=True)
+    
+    if not patron_promedio.empty:
+        dia_mejor = patron_promedio.sort_values(
+            'Total Venta Neta', ascending=False
+        ).iloc[0]
+    
+        dia_peor = patron_promedio.sort_values(
+            'Total Venta Neta'
+        ).iloc[0]
+    
+        st.info(
+            f"📈 Mejor día promedio: **{dia_mejor['Dia_Nombre']}** "
+            f"(${dia_mejor['Total Venta Neta']:,.0f})\n\n"
+            f"📉 Día más bajo (con ventas): **{dia_peor['Dia_Nombre']}** "
+            f"(${dia_peor['Total Venta Neta']:,.0f})"
+        )
 
-    dia_mejor = patron_promedio.sort_values('Total Venta Neta', ascending=False).iloc[0]
-    dia_peor = patron_promedio.sort_values('Total Venta Neta').iloc[0]
-    
-    st.info(
-        f"📈 Mejor día promedio: **{dia_mejor['Dia_Nombre']}** "
-        f"(${dia_mejor['Total Venta Neta']:,.0f})  \n"
-        f"📉 Día más bajo: **{dia_peor['Dia_Nombre']}** "
-        f"(${dia_peor['Total Venta Neta']:,.0f})"
-    )
 
 
     # --- TABLA: RESUMEN SEMANAL (LUNES A DOMINGO) ---
