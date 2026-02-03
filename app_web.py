@@ -580,43 +580,129 @@ def mostrar_dashboard(f_inicio, f_fin):
         Cantidad=('Cantidad', 'sum')
     ).reset_index()
     
-    with col_g1:
-        top_cant = product_summary.sort_values('Cantidad', ascending=False).head(10)
-        fig_prod = px.bar(top_cant, x='Cantidad', y='Producto', orientation='h',
-                          title="Top 10 Productos (Volumen)", 
-                          text_auto=True, template='plotly_white',
-                          color='Cantidad', color_continuous_scale='Purples')
-        fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_prod, use_container_width=True)
-        
-    with col_g2:
-        top_gan = product_summary.sort_values('Total_Ganancia', ascending=False).head(10)
-        fig_gan = px.bar(top_gan, x='Total_Ganancia', y='Producto', orientation='h',
-                         title="Top 10 Productos (Ganancia $)",
-                         text_auto='.2s', template='plotly_white',
-                         color='Total_Ganancia', color_continuous_scale='Peach')
-        fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_gan, use_container_width=True)
+   st.subheader("Top 10 Productos por Volumen")
+
+    top_cant = product_summary.sort_values('Cantidad', ascending=False).head(10)
+    fig_prod = px.bar(
+        top_cant,
+        x='Cantidad',
+        y='Producto',
+        orientation='h',
+        text_auto=True,
+        template='plotly_white',
+        color='Cantidad',
+        color_continuous_scale='Purples'
+    )
+    fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
+    st.plotly_chart(fig_prod, use_container_width=True)
+    
+    st.subheader("Top 10 Productos por Ganancia")
+    
+    top_gan = product_summary.sort_values('Total_Ganancia', ascending=False).head(10)
+    fig_gan = px.bar(
+        top_gan,
+        x='Total_Ganancia',
+        y='Producto',
+        orientation='h',
+        text_auto='.2s',
+        template='plotly_white',
+        color='Total_Ganancia',
+        color_continuous_scale='Peach'
+    )
+    fig_gan.update_layout(yaxis={'categoryorder': 'total ascending'})
+    st.plotly_chart(fig_gan, use_container_width=True)
+
 
     # --- GRÁFICO 2: PATRONES SEMANALES (SUPERPOSICIÓN) ---
-    st.subheader("🔎 Patrones Semanales ")
-    st.caption("Compara el rendimiento de los días de la semana entre diferentes semanas para identificar patrones (ej. 'Los martes siempre son bajos').")
+    st.subheader("🔎 Patrones Semanales")
+    st.caption(
+        "Compara el comportamiento diario entre semanas completas para detectar patrones repetitivos."
+    )
     
-    # Preparar datos para superposición
     df_patron = df_filtered.copy()
-    # Mapear día en inglés a español y asegurar orden
-    df_patron['Dia_Nombre'] = df_patron['Fecha_DT'].dt.day_name().map(DIAS_ESP)
-    # Agrupar por semana (Inicio Lunes)
-    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(lambda x: x - datetime.timedelta(days=x.weekday()))
     
-    patron_agrupado = df_patron.groupby(['Inicio_Semana', 'Dia_Nombre'])['Total Venta Neta'].sum().reset_index()
+    # Día de la semana en español
+    df_patron['Dia_Nombre'] = (
+        df_patron['Fecha_DT']
+        .dt.day_name()
+        .map(DIAS_ESP)
+    )
     
-    fig_patron = px.line(patron_agrupado, x='Dia_Nombre', y='Total Venta Neta', color='Inicio_Semana',
-                         category_orders={'Dia_Nombre': ORDEN_DIAS}, # Forzar orden Lun-Dom
-                         title="Comparativa Semanal (Día a Día)",
-                         labels={'Total Venta Neta': 'Ventas ($)', 'Inicio_Semana': 'Semana del'},
-                         template='plotly_white')
+    # Inicio de semana (Lunes)
+    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(
+        lambda x: x - datetime.timedelta(days=x.weekday())
+    )
+    
+    # Etiqueta corta para leyenda
+    df_patron['Semana_Label'] = df_patron['Inicio_Semana'].dt.strftime('%d/%m')
+    
+    # Agrupación
+    patron_agrupado = (
+        df_patron
+        .groupby(['Semana_Label', 'Dia_Nombre'], as_index=False)
+        ['Total Venta Neta']
+        .sum()
+    )
+    
+    fig_patron = px.line(
+        patron_agrupado,
+        x='Dia_Nombre',
+        y='Total Venta Neta',
+        color='Semana_Label',
+        category_orders={'Dia_Nombre': ORDEN_DIAS},
+        markers=True,
+        template='plotly_white',
+        labels={
+            'Total Venta Neta': 'Ventas ($)',
+            'Dia_Nombre': 'Día de la semana',
+            'Semana_Label': 'Semana'
+        },
+        title="Comparativa Semanal Día a Día"
+    )
+    
+    fig_patron.update_layout(
+        legend_title_text="Semana (Lun)",
+        hovermode="x unified"
+    )
+    
     st.plotly_chart(fig_patron, use_container_width=True)
+
+
+    st.subheader("🔎 Patrones Semanales (Promedio)")
+    st.caption("Promedio de ventas por día de la semana para detectar días fuertes y débiles.")
+    
+    df_patron = df_filtered.copy()
+    df_patron['Dia_Nombre'] = df_patron['Fecha_DT'].dt.day_name().map(DIAS_ESP)
+    
+    patron_avg = (
+        df_patron
+        .groupby('Dia_Nombre')['Total Venta Neta']
+        .mean()
+        .reindex(ORDEN_DIAS)
+        .reset_index()
+    )
+    
+    fig_patron = px.line(
+        patron_avg,
+        x='Dia_Nombre',
+        y='Total Venta Neta',
+        markers=True,
+        template='plotly_white',
+        labels={'Total Venta Neta': 'Venta Promedio ($)', 'Dia_Nombre': 'Día'}
+    )
+    
+    st.plotly_chart(fig_patron, use_container_width=True)
+
+    dia_mejor = patron_promedio.sort_values('Total Venta Neta', ascending=False).iloc[0]
+    dia_peor = patron_promedio.sort_values('Total Venta Neta').iloc[0]
+    
+    st.info(
+        f"📈 Mejor día promedio: **{dia_mejor['Dia_Nombre']}** "
+        f"(${dia_mejor['Total Venta Neta']:,.0f})  \n"
+        f"📉 Día más bajo: **{dia_peor['Dia_Nombre']}** "
+        f"(${dia_peor['Total Venta Neta']:,.0f})"
+    )
+
 
     # --- TABLA: RESUMEN SEMANAL (LUNES A DOMINGO) ---
     st.subheader("Resumen Semanal (Lunes - Domingo)")
