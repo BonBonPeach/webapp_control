@@ -578,45 +578,45 @@ def mostrar_dashboard(f_inicio, f_fin):
     # Semana ISO (año-semana)
     daily_summary['Semana'] = daily_summary['Fecha'].dt.to_period('W-MON')
     # --- LÍNEAS DE MEDIA SEMANAL (ESTILO CONTROL) ---
-weekly_means = (
-    daily_summary
-    .assign(Fecha=pd.to_datetime(daily_summary['Fecha']))
-    .assign(Semana=lambda x: x['Fecha'].dt.to_period('W-MON'))
-    .groupby('Semana')
-    .agg(
-        mean_ventas=('Ventas', 'mean'),
-        mean_ganancia=('Ganancia', 'mean'),
-        inicio_semana=('Fecha', 'min'),
-        fin_semana=('Fecha', 'max')
-    )
-    .reset_index()
-)
-
-for _, row in weekly_means.iterrows():
-    # Media semanal Ventas (AZUL)
-    fig_daily.add_trace(
-        go.Scatter(
-            x=[row['inicio_semana'], row['fin_semana']],
-            y=[row['mean_ventas'], row['mean_ventas']],
-            mode="lines",
-            line=dict(color="#1f77b4", width=1),  # azul, delgada
-            showlegend=False,
-            hoverinfo="skip"
+    weekly_means = (
+        daily_summary
+        .assign(Fecha=pd.to_datetime(daily_summary['Fecha']))
+        .assign(Semana=lambda x: x['Fecha'].dt.to_period('W-MON'))
+        .groupby('Semana')
+        .agg(
+            mean_ventas=('Ventas', 'mean'),
+            mean_ganancia=('Ganancia', 'mean'),
+            inicio_semana=('Fecha', 'min'),
+            fin_semana=('Fecha', 'max')
         )
-    )
-
-    # Media semanal Ganancia (VERDE)
-    fig_daily.add_trace(
-        go.Scatter(
-            x=[row['inicio_semana'], row['fin_semana']],
-            y=[row['mean_ganancia'], row['mean_ganancia']],
-            mode="lines",
-            line=dict(color="#2ca02c", width=1),  # verde, delgada
-            showlegend=False,
-            hoverinfo="skip"
-        )
+        .reset_index()
     )
     
+    for _, row in weekly_means.iterrows():
+        # Media semanal Ventas (AZUL)
+        fig_daily.add_trace(
+            go.Scatter(
+                x=[row['inicio_semana'], row['fin_semana']],
+                y=[row['mean_ventas'], row['mean_ventas']],
+                mode="lines",
+                line=dict(color="#1f77b4", width=1),  # azul, delgada
+                showlegend=False,
+                hoverinfo="skip"
+            )
+        )
+    
+        # Media semanal Ganancia (VERDE)
+        fig_daily.add_trace(
+            go.Scatter(
+                x=[row['inicio_semana'], row['fin_semana']],
+                y=[row['mean_ganancia'], row['mean_ganancia']],
+                mode="lines",
+                line=dict(color="#2ca02c", width=1),  # verde, delgada
+                showlegend=False,
+                hoverinfo="skip"
+            )
+        )
+        
     # Gráfico base
     fig_daily = px.line(
         daily_summary,
