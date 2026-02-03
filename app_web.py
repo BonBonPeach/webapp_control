@@ -715,19 +715,19 @@ def mostrar_dashboard(f_inicio, f_fin):
 
     
     if not patron_promedio.empty:
-    mejor = patron_promedio.loc[
-        patron_promedio['Total Venta Neta'].idxmax()
-    ]
-    peor = patron_promedio.loc[
-        patron_promedio['Total Venta Neta'].idxmin()
-    ]
-
-    st.success(
-        f"🔥 Mejor día promedio: **{mejor['Dia_Nombre']}** "
-        f"(${mejor['Total Venta Neta']:,.0f})\n\n"
-        f"🧊 Día más bajo (con ventas): **{peor['Dia_Nombre']}** "
-        f"(${peor['Total Venta Neta']:,.0f})"
-    )
+        mejor = patron_promedio.loc[
+            patron_promedio['Total Venta Neta'].idxmax()
+        ]
+        peor = patron_promedio.loc[
+            patron_promedio['Total Venta Neta'].idxmin()
+        ]
+    
+        st.success(
+            f"🔥 Mejor día promedio: **{mejor['Dia_Nombre']}** "
+            f"(${mejor['Total Venta Neta']:,.0f})\n\n"
+            f"🧊 Día más bajo (con ventas): **{peor['Dia_Nombre']}** "
+            f"(${peor['Total Venta Neta']:,.0f})"
+        )
 
     # --- TABLA: RESUMEN SEMANAL (LUNES A DOMINGO) ---
     st.subheader("Resumen Semanal (Lunes - Domingo)")
