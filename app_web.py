@@ -580,7 +580,7 @@ def mostrar_dashboard(f_inicio, f_fin):
         Cantidad=('Cantidad', 'sum')
     ).reset_index()
     
-   st.subheader("Top 10 Productos por Volumen")
+    st.subheader("Top 10 Productos por Volumen")
 
     top_cant = product_summary.sort_values('Cantidad', ascending=False).head(10)
     fig_prod = px.bar(
