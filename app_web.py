@@ -966,6 +966,8 @@ def mostrar_ventas(f_inicio, f_fin):
     if 'temp_mods' not in st.session_state: st.session_state.temp_mods = {}
  
     col_pos, col_hist = st.columns([2, 3])
+    if isinstance(ventas, list): ventas_df = pd.DataFrame(ventas)
+    else: ventas_df = ventas
     # GRÁFICOS MINI
     if es_admin and not ventas_df.empty:
          with st.expander("📊 Resumen Rápido", expanded=False):
