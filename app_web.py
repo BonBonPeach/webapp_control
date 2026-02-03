@@ -577,18 +577,44 @@ def mostrar_dashboard(f_inicio, f_fin):
     
     # Semana ISO (año-semana)
     daily_summary['Semana'] = daily_summary['Fecha'].dt.to_period('W-MON')
-    
-    # Media semanal (solo días con venta > 0)
-    weekly_mean = (
-        daily_summary[daily_summary['Ventas'] > 0]
-        .groupby('Semana')
-        .agg(
-            Media_Ventas=('Ventas', 'mean'),
-            Media_Ganancia=('Ganancia', 'mean'),
-            Fecha_Inicio=('Fecha', 'min'),
-            Fecha_Fin=('Fecha', 'max')
+    # --- LÍNEAS DE MEDIA SEMANAL (ESTILO CONTROL) ---
+weekly_means = (
+    daily_summary
+    .assign(Fecha=pd.to_datetime(daily_summary['Fecha']))
+    .assign(Semana=lambda x: x['Fecha'].dt.to_period('W-MON'))
+    .groupby('Semana')
+    .agg(
+        mean_ventas=('Ventas', 'mean'),
+        mean_ganancia=('Ganancia', 'mean'),
+        inicio_semana=('Fecha', 'min'),
+        fin_semana=('Fecha', 'max')
+    )
+    .reset_index()
+)
+
+for _, row in weekly_means.iterrows():
+    # Media semanal Ventas (AZUL)
+    fig_daily.add_trace(
+        go.Scatter(
+            x=[row['inicio_semana'], row['fin_semana']],
+            y=[row['mean_ventas'], row['mean_ventas']],
+            mode="lines",
+            line=dict(color="#1f77b4", width=1),  # azul, delgada
+            showlegend=False,
+            hoverinfo="skip"
         )
-        .reset_index()
+    )
+
+    # Media semanal Ganancia (VERDE)
+    fig_daily.add_trace(
+        go.Scatter(
+            x=[row['inicio_semana'], row['fin_semana']],
+            y=[row['mean_ganancia'], row['mean_ganancia']],
+            mode="lines",
+            line=dict(color="#2ca02c", width=1),  # verde, delgada
+            showlegend=False,
+            hoverinfo="skip"
+        )
     )
     
     # Gráfico base
@@ -613,28 +639,6 @@ def mostrar_dashboard(f_inicio, f_fin):
             line_dash="dot",
             line_color="gray",
             opacity=0.5
-        )
-    
-    # --- Medias semanales (líneas horizontales por etapa) ---
-    for _, row in weekly_mean.iterrows():
-        # Ventas
-        fig_daily.add_shape(
-            type="line",
-            x0=row['Fecha_Inicio'],
-            x1=row['Fecha_Fin'],
-            y0=row['Media_Ventas'],
-            y1=row['Media_Ventas'],
-            line=dict(color='#4B2840', width=3, dash='dash')
-        )
-    
-        # Ganancia
-        fig_daily.add_shape(
-            type="line",
-            x0=row['Fecha_Inicio'],
-            x1=row['Fecha_Fin'],
-            y0=row['Media_Ganancia'],
-            y1=row['Media_Ganancia'],
-            line=dict(color='#F1B48B', width=3, dash='dash')
         )
     
     fig_daily.update_layout(
