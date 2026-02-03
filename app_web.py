@@ -598,7 +598,7 @@ def mostrar_dashboard(f_inicio, f_fin):
             .reset_index()
     )
     
-    weekly_means['Fin_Semana'] = weekly_means['Inicio_Semana'] + pd.Timedelta(days=6)
+    weekly_means['Fin_Semana'] = weekly_means['Inicio_Semana'] + pd.Timedelta(days=7)
     
     # ===============================
     # Gráfico base
