@@ -1063,7 +1063,9 @@ def mostrar_ventas(f_inicio, f_fin):
         
         if es_admin:
             with st.expander("📊 Gráficas de Resumen Rápido", expanded=True):
+                cg1, cg2 = st.columns(2)
                 # Gráfica 1
+                with cg1:
                 if 'Forma Pago' in ventas_df.columns:
                     fig_pago = px.pie(ventas_df.groupby('Forma Pago')['Total Venta Neta'].sum().reset_index(), 
                                     values='Total Venta Neta', names='Forma Pago', hole=.5, 
@@ -1071,7 +1073,7 @@ def mostrar_ventas(f_inicio, f_fin):
                     st.plotly_chart(fig_pago, use_container_width=True)
                 
                 st.divider()
-                
+                with cg2:
                 # Gráfica 2
                 venta_t = ventas_df['Total Venta Neta'].sum()
                 ganancia_t = ventas_df['Ganancia Neta'].sum()
