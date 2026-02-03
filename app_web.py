@@ -967,7 +967,7 @@ def mostrar_ventas(f_inicio, f_fin):
  
     col_pos, col_hist = st.columns([2, 3])
     # GRÁFICOS MINI
-    if es_admin 
+    if es_admin: 
          with st.expander("📊 Resumen Rápido", expanded=False):
              cg1, cg2 = st.columns(2)
              with cg1:
