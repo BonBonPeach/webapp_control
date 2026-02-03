@@ -624,7 +624,10 @@ def mostrar_dashboard(f_inicio, f_fin):
     # ===============================
     
     df_patron = df_filtered.copy()
-    
+     
+    df_patron['Inicio_Semana'] = df_patron['Fecha_DT'].apply(
+        lambda x: x - datetime.timedelta(days=x.weekday())
+    )
     # Día de la semana en español
     df_patron['Dia_Nombre'] = (
         df_patron['Fecha_DT']
