@@ -413,11 +413,7 @@ def guardar_ventas(nuevas):
 
     # --- Normalizar fecha ---
     if "Fecha" not in df_nuevo.columns:
-        if "Fecha Venta" in df_nuevo.columns:
-            df_nuevo["Fecha"] = pd.to_datetime(
-                df_nuevo["Fecha Venta"],
-                errors="coerce"
-            ).dt.strftime("%d/%m/%Y")
+        df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
         else:
             df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
 
