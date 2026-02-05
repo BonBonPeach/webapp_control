@@ -1160,7 +1160,7 @@ def mostrar_ventas(f_inicio, f_fin):
                         modificadores,
                         leer_ingredientes_base()
                     )
-                    
+                    costo_extra_total = p_m
                     lista_mods_final.append({
                         "nombre": m_name,
                         "precio": p_m,
@@ -1173,7 +1173,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 'Cantidad': cant_principal,
                 'Precio Base': p_base,
                 'Modificadores': lista_mods_final,
-                'Precio Unitario Final': p_base + p_m,
+                'Precio Unitario Final': p_base + costo_extra_total,
                 'Descuento %': desc_porc,
                 'Es Tarjeta': pago_tarjeta,
                 'Fecha': pd.to_datetime(fecha_venta)
