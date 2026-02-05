@@ -1116,10 +1116,58 @@ def mostrar_ventas(f_inicio, f_fin):
         
         st.metric("Total a Cobrar", f"${total_carrito:.2f}")
         if st.button("✅ FINALIZAR Y REGISTRAR VENTA", type="primary", use_container_width=True):
-            # Aquí va tu lógica de guardar_ventas y descontar_recursivo...
-            st.success("Venta Procesada")
+        
+            nuevas_ventas = []
+            fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+        
+            for item in st.session_state.carrito:
+                producto = item["Producto"]
+                cantidad = float(item["Cantidad"])
+                descuento_porc = float(item["Descuento %"])
+                precio_unit = float(item["Precio Unitario Final"])
+        
+                total_bruto = precio_unit * cantidad
+                descuento_monto = total_bruto * (descuento_porc / 100)
+                total_desp_desc = total_bruto - descuento_monto
+        
+                comision = (
+                    total_desp_desc * (COMISION_TARJETA / 100)
+                    if item.get("Es Tarjeta") else 0
+                )
+        
+                total_neto = total_desp_desc - comision
+        
+                costo_unit = leer_precios_desglose().get(producto, {}).get("costo_produccion", 0)
+                costo_total = costo_unit * cantidad
+        
+                ganancia_bruta = total_desp_desc - costo_total
+                ganancia_neta = total_neto - costo_total
+        
+                nuevas_ventas.append({
+                    "Fecha": fecha_str,
+                    "Producto": producto,
+                    "Cantidad": cantidad,
+                    "Precio Unitario": precio_unit,
+                    "Total Venta Bruto": total_bruto,
+                    "Descuento (%)": descuento_porc,
+                    "Descuento ($)": descuento_monto,
+                    "Costo Total": costo_total,
+                    "Ganancia Bruta": ganancia_bruta,
+                    "Comision ($)": comision,
+                    "Ganancia Neta": ganancia_neta,
+                    "Total Venta Neta": total_neto,
+                    "Forma Pago": "Tarjeta" if item.get("Es Tarjeta") else "Efectivo"
+                })
+        
+                # 🔻 Deducción de inventario (si aplica)
+                descontar_recursivo(producto, cantidad)
+        
+            guardar_ventas(nuevas_ventas)
+        
+            st.success(f"Venta registrada correctamente ({len(nuevas_ventas)} productos)")
             st.session_state.carrito = []
             st.rerun()
+        
 
     # =========================================================
     # 2. SECCIÓN INFERIOR: HISTORIAL Y GRÁFICAS (ABAJO)
