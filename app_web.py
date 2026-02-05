@@ -1240,7 +1240,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 # TOTALES FINALES
                 # ========================
                 costo_total = costo_producto_total + total_costo_mods
-                ganancia_neta = total_neto - costo_total
+
                 
                 # ========================
                 # VENTA BASE
@@ -1252,7 +1252,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
                 comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
                 total_neto = subtotal - comision
-                
+                ganancia_neta = total_neto - costo_total
             
                 ventas_detalladas.append({
                     "Fecha": fecha_guardado,
