@@ -326,7 +326,20 @@ def calcular_modificadores_totales(mods):
         total_costo += costo * qty
 
     return total_precio, total_costo
+    
+def calcular_costo_modificador(nombre_mod, modificadores, ingredientes_base):
+    mod = modificadores.get(nombre_mod)
+    if not mod:
+        return 0
 
+    mapa_costos = {i["nombre"]: i["costo_receta"] for i in ingredientes_base}
+
+    costo = 0
+    for ing, cant in mod.get("ingredientes", {}).items():
+        costo += mapa_costos.get(ing, 0) * cant
+
+    return costo
+    
 # ============================================================================================================================
 # INVENTARIO
 # ============================================================================================================================
@@ -1142,8 +1155,18 @@ def mostrar_ventas(f_inicio, f_fin):
                 qty = st.session_state.get(f"qty_mod_{m_name}", 0)
                 if qty > 0:
                     p_m = modificadores[m_name]["precio_extra"]
-                    lista_mods_final.append({"nombre": m_name, "precio": p_m, "cantidad": qty})
-                    costo_extra_total += (p_m * qty)
+                    costo_m = calcular_costo_modificador(
+                        m_name,
+                        modificadores,
+                        leer_ingredientes_base()
+                    )
+                    
+                    lista_mods_final.append({
+                        "nombre": m_name,
+                        "precio": p_m,
+                        "cantidad": qty,
+                        "costo": costo_m
+                    })
             
             st.session_state.carrito.append({
                 'Producto': prod_sel,
