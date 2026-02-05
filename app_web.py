@@ -1173,7 +1173,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 'Cantidad': cant_principal,
                 'Precio Base': p_base,
                 'Modificadores': lista_mods_final,
-                'Precio Unitario Final': p_base + costo_extra_total,
+                'Precio Unitario Final': p_base + p_m,
                 'Descuento %': desc_porc,
                 'Es Tarjeta': pago_tarjeta,
                 'Fecha': pd.to_datetime(fecha_venta)
