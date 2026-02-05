@@ -427,7 +427,7 @@ def guardar_ventas(nuevas, fecha_venta=None):
     "Fecha",
     "Producto",
     "Cantidad",
-    "Precio Unitario"0,
+    "Precio Unitario",
     "Total Venta Bruto",
     "Descuento ($)",
     "Costo Total",
