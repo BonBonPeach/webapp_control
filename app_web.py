@@ -313,20 +313,17 @@ def guardar_modificadores(mods_dict):
                 })
     return api_write(R2_MODIFICADORES, pd.DataFrame(data))
     
-def calcular_modificadores_totales(lista_mods):
-    """
-    lista_mods = [
-        {"nombre": "...", "precio": 10, "cantidad": 2, "costo": 4},
-        ...
-    ]
-    """
+def calcular_modificadores_totales(mods):
     total_precio = 0
     total_costo = 0
 
-    for m in lista_mods or []:
-        qty = m.get("cantidad", 0)
-        total_precio += m.get("precio", 0) * qty
-        total_costo += m.get("costo", 0) * qty
+    for m in mods:
+        qty = clean_and_convert_float(m.get("cantidad", 0))
+        precio = clean_and_convert_float(m.get("precio", 0))
+        costo = clean_and_convert_float(m.get("costo", 0))
+
+        total_precio += precio * qty
+        total_costo += costo * qty
 
     return total_precio, total_costo
 
