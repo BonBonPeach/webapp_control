@@ -1194,9 +1194,12 @@ def mostrar_ventas(f_inicio, f_fin):
             for item in st.session_state.carrito:
                 producto = item["Producto"]
                 cantidad = item["Cantidad"]
-                precio_unitario = item["Precio Unitario Final"]
+                precio_unitario = item["Precio Unitario Final"]   # ya incluye mods
                 descuento_porc = item["Descuento %"]
             
+                # -----------------------------
+                # 🧮 VENTA
+                # -----------------------------
                 total_bruto = precio_unitario * cantidad
                 descuento_monto = total_bruto * (descuento_porc / 100)
                 subtotal = total_bruto - descuento_monto
@@ -1205,10 +1208,35 @@ def mostrar_ventas(f_inicio, f_fin):
                 comision = subtotal * (COMISION_TARJETA / 100) if item["Es Tarjeta"] else 0
                 total_neto = subtotal - comision
             
+                # -----------------------------
+                # 🧮 COSTO BASE DEL PRODUCTO
+                # -----------------------------
                 datos_prod = desglose_precios.get(producto, {})
-                costo_unitario = datos_prod.get("costo_produccion", 0)
-                costo_total = costo_unitario * cantidad
+                costo_unitario_base = datos_prod.get("costo_total", 0)
+                costo_base_total = costo_unitario_base * cantidad
             
+                # -----------------------------
+                # 🧮 COSTO DE MODIFICADORES
+                # -----------------------------
+                costo_mods_total = 0
+                venta_mods_total = 0
+            
+                for mod in item.get("Modificadores", []):
+                    nombre_mod = mod["nombre"]
+                    qty_mod = mod.get("cantidad", 0)
+                    precio_mod = mod.get("precio", 0)
+            
+                    # venta del modificador
+                    venta_mods_total += precio_mod * qty_mod
+            
+                    # costo real del modificador (desde recetas)
+                    costo_mod_unit = recetas.get(nombre_mod, {}).get("costo_total", 0)
+                    costo_mods_total += costo_mod_unit * qty_mod
+            
+                # -----------------------------
+                # 🧮 COSTO Y GANANCIA FINAL
+                # -----------------------------
+                costo_total = costo_base_total + costo_mods_total
                 ganancia_neta = total_neto - costo_total
             
                 ventas_detalladas.append({
@@ -1224,18 +1252,19 @@ def mostrar_ventas(f_inicio, f_fin):
                     "Ganancia Neta": ganancia_neta,
                     "Forma Pago": forma_pago
                 })
-        
-                # 🔁 Reposición (producto completo, no modificadores individuales)
-                #descontar_recursivo(producto, cantidad)
-        
+            
+                # 🔁 Reposición (producto completo, incluye modificadores vía receta)
+                # descontar_recursivo(producto, cantidad)
+            
             ok = guardar_ventas(ventas_detalladas)
-        
+            
             if ok:
                 st.success("Venta registrada correctamente")
                 st.session_state.carrito = []
                 st.rerun()
             else:
                 st.error("No se pudo guardar la venta")
+            
 
 
     # =========================================================
