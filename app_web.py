@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import numpy as np
 import math
 
+
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 API_KEY=st.secrets["API_KEY"].strip()
 
@@ -415,14 +416,14 @@ def guardar_ventas(nuevas, fecha_venta=None):
 
     # --- FECHA ---
     if fecha_venta is None:
-        fecha_venta = pd.Timestamp.today().strftime("%d/%m/%Y")
+        fecha_str = pd.Timestamp.today().strftime("%d/%m/%Y")
     else:
-        fecha_venta = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+        fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
 
-    df_nuevo["Fecha"] = fecha_venta
+    df_nuevo["Fecha"] = fecha_str
 
-    # --- COLUMNAS BASE ---
-    columnas_base = [
+    # --- ASEGURAR COLUMNAS ---
+    columnas = [
         "Cantidad",
         "Precio Unitario",
         "Descuento (%)",
@@ -430,13 +431,13 @@ def guardar_ventas(nuevas, fecha_venta=None):
         "Forma Pago"
     ]
 
-    for col in columnas_base:
-        if col not in df_nuevo.columns:
-            df_nuevo[col] = 0
+    for c in columnas:
+        if c not in df_nuevo.columns:
+            df_nuevo[c] = 0
 
     # --- NUMÉRICOS ---
-    for col in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
-        df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce")
+    for c in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
+        df_nuevo[c] = pd.to_numeric(df_nuevo[c], errors="coerce")
 
     # --- CÁLCULOS ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
@@ -454,29 +455,33 @@ def guardar_ventas(nuevas, fecha_venta=None):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
+    # --- UNIR HISTÓRICO ---
+    df_final = df_nuevo if df_actual.empty else pd.concat(
+        [df_actual, df_nuevo],
+        ignore_index=True
+    )
+
     # ------------------------------------------------------------------
-    # 🔥 LIMPIEZA DEFINITIVA JSON-SAFE (ESTA ES LA CLAVE)
+    # 🔥 LIMPIEZA FINAL REAL (JSON-SAFE)
     # ------------------------------------------------------------------
 
-    def limpiar_valor(v):
+    registros = df_final.to_dict("records")
+
+    def limpiar_json(v):
         if v is None:
             return 0
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            return 0
+        if isinstance(v, float):
+            if math.isnan(v) or math.isinf(v):
+                return 0
         return v
 
-    df_nuevo = df_nuevo.applymap(limpiar_valor)
+    registros_limpios = [
+        {k: limpiar_json(v) for k, v in fila.items()}
+        for fila in registros
+    ]
 
-    # --- UNIR HISTÓRICO ---
-    if not df_actual.empty:
-        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
-    else:
-        df_final = df_nuevo
-
-    # 🔍 DEBUG opcional (puedes comentar luego)
-    # st.write("NaN restantes:", df_final.isna().sum())
-
-    return api_write(R2_VENTAS, df_final)
+    # 🔒 aquí ya NO puede existir NaN
+    return api_write(R2_VENTAS, registros_limpios)
 
 #============================================================================================================================
 
