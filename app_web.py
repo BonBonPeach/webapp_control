@@ -407,81 +407,91 @@ def leer_ventas(f_ini=None, f_fin=None):
 
     return df.to_dict("records")
 
-def guardar_ventas(nuevas, fecha_venta=None):
+def guardar_ventas(nuevas, fecha_venta):
     df_actual = api_read(R2_VENTAS)
     df_nuevo = pd.DataFrame(nuevas)
 
     if df_nuevo.empty:
         return False
 
-    # --- FECHA ---
-    if fecha_venta is None:
-        fecha_str = pd.Timestamp.today().strftime("%d/%m/%Y")
-    else:
-        fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+    # -----------------------------
+    # FECHA (usar la ya definida arriba)
+    # -----------------------------
+    df_nuevo["Fecha"] = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
 
-    df_nuevo["Fecha"] = fecha_str
-
-    # --- ASEGURAR COLUMNAS ---
-    columnas = [
+    # -----------------------------
+    # NUMÉRICOS
+    # -----------------------------
+    for col in [
         "Cantidad",
         "Precio Unitario",
         "Descuento (%)",
-        "Costo Total",
-        "Forma Pago"
-    ]
+        "Costo Total"
+    ]:
+        if col not in df_nuevo.columns:
+            df_nuevo[col] = 0
 
-    for c in columnas:
-        if c not in df_nuevo.columns:
-            df_nuevo[c] = 0
+        df_nuevo[col] = (
+            pd.to_numeric(df_nuevo[col], errors="coerce")
+            .replace([np.inf, -np.inf], 0)
+            .fillna(0)
+        )
 
-    # --- NUMÉRICOS ---
-    for c in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
-        df_nuevo[c] = pd.to_numeric(df_nuevo[c], errors="coerce")
-
-    # --- CÁLCULOS ---
+    # -----------------------------
+    # CÁLCULOS EXACTOS (como escritorio)
+    # -----------------------------
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
-    df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
-    df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
 
-    df_nuevo["Comision ($)"] = np.where(
-        df_nuevo["Forma Pago"] == "Tarjeta",
-        df_nuevo["Subtotal"] * (COMISION_TARJETA / 100),
-        0
+    df_nuevo["Descuento ($)"] = (
+        df_nuevo["Total Venta Bruto"]
+        * (df_nuevo["Descuento (%)"] / 100)
     )
 
-    df_nuevo["Total Venta Neta"] = df_nuevo["Subtotal"] - df_nuevo["Comision ($)"]
-    df_nuevo["Ganancia Neta"] = df_nuevo["Total Venta Neta"] - df_nuevo["Costo Total"]
-
-    df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
-
-    # --- UNIR HISTÓRICO ---
-    df_final = df_nuevo if df_actual.empty else pd.concat(
-        [df_actual, df_nuevo],
-        ignore_index=True
+    df_nuevo["Subtotal"] = (
+        df_nuevo["Total Venta Bruto"]
+        - df_nuevo["Descuento ($)"]
     )
 
-    # ------------------------------------------------------------------
-    # 🔥 LIMPIEZA FINAL REAL (JSON-SAFE)
-    # ------------------------------------------------------------------
+    df_nuevo["Comision ($)"] = df_nuevo.apply(
+        lambda r: r["Subtotal"] * (COMISION_TARJETA / 100)
+        if r.get("Forma Pago") == "Tarjeta"
+        else 0,
+        axis=1
+    )
 
-    registros = df_final.to_dict("records")
+    df_nuevo["Total Venta Neta"] = (
+        df_nuevo["Subtotal"]
+        - df_nuevo["Comision ($)"]
+    )
 
-    def limpiar_json(v):
-        if v is None:
-            return 0
-        if isinstance(v, float):
-            if math.isnan(v) or math.isinf(v):
-                return 0
-        return v
+    df_nuevo["Ganancia Bruta"] = (
+        df_nuevo["Total Venta Bruto"]
+        - df_nuevo["Costo Total"]
+    )
 
-    registros_limpios = [
-        {k: limpiar_json(v) for k, v in fila.items()}
-        for fila in registros
-    ]
+    df_nuevo["Ganancia Neta"] = (
+        df_nuevo["Total Venta Neta"]
+        - df_nuevo["Costo Total"]
+    )
 
-    # 🔒 aquí ya NO puede existir NaN
-    return api_write(R2_VENTAS, registros_limpios)
+    # Limpieza final (clave para evitar NaN en JSON)
+    df_nuevo = (
+        df_nuevo
+        .replace([np.inf, -np.inf], 0)
+        .fillna(0)
+        .drop(columns=["Subtotal"], errors="ignore")
+    )
+
+    # -----------------------------
+    # UNIR HISTÓRICO
+    # -----------------------------
+    df_final = (
+        df_nuevo
+        if df_actual.empty
+        else pd.concat([df_actual, df_nuevo], ignore_index=True)
+    )
+
+    return api_write(R2_VENTAS, df_final)
 
 #============================================================================================================================
 
