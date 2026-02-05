@@ -405,33 +405,32 @@ def leer_ventas(f_ini=None, f_fin=None):
     return df.to_dict("records")
 
 def guardar_ventas(nuevas):
-    df_actual = api_read(R2_VENTAS)
-    df_nuevo = pd.DataFrame(nuevas)
+    if not nuevas or not isinstance(nuevas, list):
+        return False
 
+    df_nuevo = pd.DataFrame(nuevas)
     if df_nuevo.empty:
         return False
 
-    # --- Normalizar Fecha ---
+    # --- Fecha segura ---
     if "Fecha" not in df_nuevo.columns:
         df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
     else:
-        df_nuevo["Fecha"] = pd.to_datetime(
-            df_nuevo["Fecha"],
-            errors="coerce",
-            dayfirst=True
-        ).dt.strftime("%d/%m/%Y")
+        df_nuevo["Fecha"] = df_nuevo["Fecha"].astype(str)
 
     # --- Columnas numéricas ---
-    cols_num = ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]
+    cols_num = [
+        "Cantidad", "Precio Unitario", "Descuento (%)",
+        "Costo Total"
+    ]
     for col in cols_num:
         if col in df_nuevo.columns:
             df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce").fillna(0)
 
-    # Asegurar Forma Pago
     if "Forma Pago" not in df_nuevo.columns:
         df_nuevo["Forma Pago"] = "Efectivo"
 
-    # --- Cálculos EXACTOS como escritorio ---
+    # --- Cálculos (idénticos a escritorio) ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
     df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
     df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
@@ -447,14 +446,21 @@ def guardar_ventas(nuevas):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- Unir con histórico ---
-    if df_actual.empty:
-        df_final = df_nuevo
-    else:
-        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
+    # --- JSON SAFE ---
+    df_nuevo = df_nuevo.replace([np.inf, -np.inf], 0).fillna(0)
 
-    api_write(R2_VENTAS, df_final)
-    return True
+    # --- Leer histórico ---
+    df_actual = api_read(R2_VENTAS)
+    if not df_actual.empty:
+        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
+    else:
+        df_final = df_nuevo
+
+    # 🔴 CLAVE: convertir a list[dict]
+    registros = df_final.to_dict(orient="records")
+
+    return api_write(R2_VENTAS, registros)
+
 
 #============================================================================================================================
 
