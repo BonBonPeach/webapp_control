@@ -1160,7 +1160,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 })
         
                 # 🔻 Deducción de inventario (si aplica)
-                descontar_recursivo(producto, cantidad)
+                #descontar_recursivo(producto, cantidad)
         
             guardar_ventas(nuevas_ventas)
         
