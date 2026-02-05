@@ -1143,8 +1143,8 @@ def mostrar_ventas(f_inicio, f_fin):
         st.metric("Total a Cobrar", f"${total_carrito:.2f}")
         if st.button("✅ FINALIZAR Y REGISTRAR VENTA", type="primary", use_container_width=True):
 
+            desglose_precios = leer_precios_desglose()
             ventas_detalladas = []
-
             fecha_guardado = pd.to_datetime(fecha_venta)
             
             for item in st.session_state.carrito:
@@ -1159,11 +1159,11 @@ def mostrar_ventas(f_inicio, f_fin):
             
                 forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
                 comision = subtotal * (COMISION_TARJETA / 100) if item["Es Tarjeta"] else 0
-            
                 total_neto = subtotal - comision
             
                 datos_prod = desglose_precios.get(producto, {})
-                costo_total = datos_prod.get("costo_produccion", 0) * cantidad
+                costo_unitario = datos_prod.get("costo_produccion", 0)
+                costo_total = costo_unitario * cantidad
             
                 ganancia_neta = total_neto - costo_total
             
