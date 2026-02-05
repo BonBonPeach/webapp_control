@@ -395,18 +395,23 @@ def guardar_ventas(nuevas):
         return False
 
     # --- Normalizar fecha ---
-    if "Fecha" not in df_nuevo.columns and "Fecha Venta" in df_nuevo.columns:
-        df_nuevo["Fecha"] = pd.to_datetime(df_nuevo["Fecha Venta"]).dt.strftime("%d/%m/%Y")
+    if "Fecha" not in df_nuevo.columns:
+        if "Fecha Venta" in df_nuevo.columns:
+            df_nuevo["Fecha"] = pd.to_datetime(
+                df_nuevo["Fecha Venta"],
+                errors="coerce"
+            ).dt.strftime("%d/%m/%Y")
+        else:
+            df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
+
+    # --- Tipos numéricos ---
+    for col in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
+        if col in df_nuevo.columns:
+            df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce").fillna(0)
 
     # --- Cálculos EXACTOS como escritorio ---
-    df_nuevo["Cantidad"] = pd.to_numeric(df_nuevo["Cantidad"], errors="coerce").fillna(0)
-    df_nuevo["Precio Unitario"] = pd.to_numeric(df_nuevo["Precio Unitario"], errors="coerce").fillna(0)
-    df_nuevo["Descuento (%)"] = pd.to_numeric(df_nuevo.get("Descuento (%)", 0), errors="coerce").fillna(0)
-    df_nuevo["Costo Total"] = pd.to_numeric(df_nuevo["Costo Total"], errors="coerce").fillna(0)
-
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
     df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
-
     df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
 
     df_nuevo["Comision ($)"] = df_nuevo.apply(
@@ -418,13 +423,17 @@ def guardar_ventas(nuevas):
     df_nuevo["Total Venta Neta"] = df_nuevo["Subtotal"] - df_nuevo["Comision ($)"]
     df_nuevo["Ganancia Neta"] = df_nuevo["Total Venta Neta"] - df_nuevo["Costo Total"]
 
-    # Limpieza
-    df_nuevo = df_nuevo.drop(columns=["Subtotal"], errors="ignore")
+    df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- Unir con histórico ---
-    df_final = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo], ignore_index=True)
+    # --- Unir histórico ---
+    df_final = df_nuevo if df_actual.empty else pd.concat(
+        [df_actual, df_nuevo],
+        ignore_index=True
+    )
 
-    return api_write(R2_VENTAS, df_final)
+    api_write(R2_VENTAS, df_final)
+    return True
+
 
 def leer_precios_desglose():
     precios = {}
@@ -1165,6 +1174,15 @@ def mostrar_ventas(f_inicio, f_fin):
             guardar_ventas(nuevas_ventas)
         
             st.success(f"Venta registrada correctamente ({len(nuevas_ventas)} productos)")
+            ok = guardar_ventas(ventas_detalladas)
+
+            if ok:
+                st.success("Venta registrada correctamente")
+                st.session_state.carrito = []
+                st.rerun()
+            else:
+                st.error("No se pudo guardar la venta")
+
             st.session_state.carrito = []
             st.rerun()
         
