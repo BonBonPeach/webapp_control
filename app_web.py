@@ -1194,49 +1194,42 @@ def mostrar_ventas(f_inicio, f_fin):
             for item in st.session_state.carrito:
                 producto = item["Producto"]
                 cantidad = item["Cantidad"]
-                precio_unitario = item["Precio Unitario Final"]   # ya incluye mods
+                precio_unitario = item["Precio Unitario Final"]
                 descuento_porc = item["Descuento %"]
             
-                # -----------------------------
-                # 🧮 VENTA
-                # -----------------------------
+                # ========================
+                # VENTA BASE
+                # ========================
                 total_bruto = precio_unitario * cantidad
                 descuento_monto = total_bruto * (descuento_porc / 100)
                 subtotal = total_bruto - descuento_monto
             
                 forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
-                comision = subtotal * (COMISION_TARJETA / 100) if item["Es Tarjeta"] else 0
+                comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
                 total_neto = subtotal - comision
             
-                # -----------------------------
-                # 🧮 COSTO BASE DEL PRODUCTO
-                # -----------------------------
-                datos_prod = recetas[p]['costo_total']
-                costo_unitario_base = datos_prod.get("costo_total", 0)
-                costo_base_total = costo_unitario_base * cantidad
+                # ========================
+                # COSTO PRODUCTO BASE
+                # ========================
+                datos_prod = desglose_precios.get(producto, {})
+                costo_unitario = clean_and_convert_float(datos_prod.get("costo_total", 0))
+                costo_producto_total = costo_unitario * cantidad
             
-                # -----------------------------
-                # 🧮 COSTO DE MODIFICADORES
-                # -----------------------------
-                costo_mods_total = 0
-                venta_mods_total = 0
+                # ========================
+                # MODIFICADORES
+                # ========================
+                mods_lista = item.get("Modificadores", [])
             
-                for mod in item.get("Modificadores", []):
-                    nombre_mod = mod["nombre"]
-                    qty_mod = mod.get("cantidad", 0)
-                    precio_mod = mod.get("precio", 0)
+                total_precio_mods, total_costo_mods = calcular_modificadores_totales(mods_lista)
             
-                    # venta del modificador
-                    venta_mods_total += precio_mod * qty_mod
+                # Ajustar por cantidad vendida
+                total_precio_mods *= cantidad
+                total_costo_mods *= cantidad
             
-                    # costo real del modificador (desde recetas)
-                    costo_mod_unit = recetas.get(nombre_mod, {}).get("costo_total", 0)
-                    costo_mods_total += costo_mod_unit * qty_mod
-            
-                # -----------------------------
-                # 🧮 COSTO Y GANANCIA FINAL
-                # -----------------------------
-                costo_total = costo_base_total + costo_mods_total
+                # ========================
+                # TOTALES FINALES
+                # ========================
+                costo_total = costo_producto_total + total_costo_mods
                 ganancia_neta = total_neto - costo_total
             
                 ventas_detalladas.append({
@@ -1244,26 +1237,25 @@ def mostrar_ventas(f_inicio, f_fin):
                     "Producto": producto,
                     "Cantidad": cantidad,
                     "Precio Unitario": precio_unitario,
-                    "Total Venta Bruto": total_bruto,
+                    "Total Venta Bruto": total_bruto + total_precio_mods,
                     "Descuento (%)": descuento_porc,
                     "Descuento ($)": descuento_monto,
                     "Costo Total": costo_total,
                     "Comision ($)": comision,
                     "Ganancia Neta": ganancia_neta,
-                    "Forma Pago": forma_pago
+                    "Forma Pago": forma_pago,
+                    "Total Venta Neta": total_neto
                 })
-            
-                # 🔁 Reposición (producto completo, incluye modificadores vía receta)
-                # descontar_recursivo(producto, cantidad)
             
             ok = guardar_ventas(ventas_detalladas)
             
             if ok:
-                st.success("Venta registrada correctamente")
+                st.success("Venta registrada correctamente ✅")
                 st.session_state.carrito = []
                 st.rerun()
             else:
-                st.error("No se pudo guardar la venta")
+                st.error("No se pudo guardar la venta ❌")
+
             
 
 
