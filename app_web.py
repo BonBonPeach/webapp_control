@@ -19,6 +19,8 @@ R2_PRECIOS = "precios"
 R2_VENTAS = "ventas"
 R2_INVENTARIO = "inventario"
 
+COMISION_TARJETA = 4.0406  
+
 USERS = st.secrets["users"]
 
 
@@ -348,13 +350,9 @@ def leer_ventas(f_ini=None, f_fin=None):
     if df.empty:
         return []
 
-    # --- Fecha ---
+    # --- Fecha (compatibilidad total) ---
     if "Fecha" in df.columns:
-        df["Fecha_DT"] = pd.to_datetime(
-            df["Fecha"],
-            errors="coerce",
-            dayfirst=True
-        )
+        df["Fecha_DT"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
     elif "Fecha Venta" in df.columns:
         df["Fecha_DT"] = pd.to_datetime(df["Fecha Venta"], errors="coerce")
     else:
@@ -369,48 +367,56 @@ def leer_ventas(f_ini=None, f_fin=None):
             (df["Fecha_DT"].dt.date <= f_fin)
         ]
 
-    # --- Numéricos (SIN recalcular ventas) ---
+    # --- Tipos numéricos (SIN recalcular) ---
     cols_num = [
-        "Total Venta Bruto", "Descuento ($)", "Ganancia Bruta",
-        "Ganancia Neta", "Costo Total", "Precio Unitario", "Cantidad",
-        "Total Venta Neta"
+        "Cantidad", "Precio Unitario", "Total Venta Bruto",
+        "Descuento ($)", "Comision ($)",
+        "Total Venta Neta", "Costo Total", "Ganancia Neta"
     ]
     for col in cols_num:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # 🚨 SOLO si NO EXISTE la columna
-    if "Total Venta Neta" not in df.columns:
-        df["Total Venta Neta"] = df["Total Venta Bruto"] - df.get("Descuento ($)", 0)
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     return df.to_dict("records")
 
 def guardar_ventas(nuevas):
     df_actual = api_read(R2_VENTAS)
-    df_nuevo = pd.DataFrame(nuevas).fillna(0)
+    df_nuevo = pd.DataFrame(nuevas)
 
-    # --- FECHA: obligatoria y normalizada ---
-    if "Fecha" not in df_nuevo.columns:
-        df_nuevo["Fecha"] = pd.Timestamp.today().normalize()
-    else:
-        df_nuevo["Fecha"] = pd.to_datetime(df_nuevo["Fecha"]).dt.normalize()
+    if df_nuevo.empty:
+        return False
 
-    # --- Total Venta Neta ---
-    if "Total Venta Neta" not in df_nuevo.columns:
-        df_nuevo["Total Venta Neta"] = (
-            df_nuevo.get("Total Venta Bruto", 0)
-            - df_nuevo.get("Descuento ($)", 0)
-        )
+    # --- Normalizar fecha ---
+    if "Fecha" not in df_nuevo.columns and "Fecha Venta" in df_nuevo.columns:
+        df_nuevo["Fecha"] = pd.to_datetime(df_nuevo["Fecha Venta"]).dt.strftime("%d/%m/%Y")
 
-    # --- Concatenación segura ---
-    if not df_actual.empty:
-        df_actual["Fecha"] = pd.to_datetime(df_actual["Fecha"]).dt.normalize()
-        df = pd.concat([df_actual, df_nuevo], ignore_index=True)
-    else:
-        df = df_nuevo
+    # --- Cálculos EXACTOS como escritorio ---
+    df_nuevo["Cantidad"] = pd.to_numeric(df_nuevo["Cantidad"], errors="coerce").fillna(0)
+    df_nuevo["Precio Unitario"] = pd.to_numeric(df_nuevo["Precio Unitario"], errors="coerce").fillna(0)
+    df_nuevo["Descuento (%)"] = pd.to_numeric(df_nuevo.get("Descuento (%)", 0), errors="coerce").fillna(0)
+    df_nuevo["Costo Total"] = pd.to_numeric(df_nuevo["Costo Total"], errors="coerce").fillna(0)
 
-    return api_write(R2_VENTAS, df)
+    df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
+    df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
 
+    df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
+
+    df_nuevo["Comision ($)"] = df_nuevo.apply(
+        lambda r: r["Subtotal"] * (COMISION_TARJETA / 100)
+        if r.get("Forma Pago") == "Tarjeta" else 0,
+        axis=1
+    )
+
+    df_nuevo["Total Venta Neta"] = df_nuevo["Subtotal"] - df_nuevo["Comision ($)"]
+    df_nuevo["Ganancia Neta"] = df_nuevo["Total Venta Neta"] - df_nuevo["Costo Total"]
+
+    # Limpieza
+    df_nuevo = df_nuevo.drop(columns=["Subtotal"], errors="ignore")
+
+    # --- Unir con histórico ---
+    df_final = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo], ignore_index=True)
+
+    return api_write(R2_VENTAS, df_final)
 
 def leer_precios_desglose():
     precios = {}
