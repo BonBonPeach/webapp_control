@@ -415,7 +415,7 @@ def guardar_ventas(nuevas):
         return False
 
     # -----------------------------
-    # FECHA (compatibilidad total)
+    # FECHA (string JSON-safe)
     # -----------------------------
     if "Fecha" not in df_nuevo.columns:
         df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
@@ -423,7 +423,16 @@ def guardar_ventas(nuevas):
         df_nuevo["Fecha"] = (
             pd.to_datetime(df_nuevo["Fecha"], errors="coerce")
             .dt.strftime("%d/%m/%Y")
+            .fillna(pd.Timestamp.today().strftime("%d/%m/%Y"))
         )
+
+    # -----------------------------
+    # FORMA PAGO (evitar None)
+    # -----------------------------
+    if "Forma Pago" not in df_nuevo.columns:
+        df_nuevo["Forma Pago"] = "Efectivo"
+    else:
+        df_nuevo["Forma Pago"] = df_nuevo["Forma Pago"].fillna("Efectivo")
 
     # -----------------------------
     # NUMÉRICOS
@@ -437,14 +446,12 @@ def guardar_ventas(nuevas):
         if col not in df_nuevo.columns:
             df_nuevo[col] = 0
 
-        df_nuevo[col] = (
-            pd.to_numeric(df_nuevo[col], errors="coerce")
-            .replace([np.inf, -np.inf], 0)
-            .fillna(0)
+        df_nuevo[col] = pd.to_numeric(
+            df_nuevo[col], errors="coerce"
         )
 
     # -----------------------------
-    # CÁLCULOS (idénticos al histórico)
+    # CÁLCULOS (como histórico)
     # -----------------------------
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
 
@@ -458,7 +465,7 @@ def guardar_ventas(nuevas):
             (r["Total Venta Bruto"] - r["Descuento ($)"])
             * (COMISION_TARJETA / 100)
         )
-        if r.get("Forma Pago") == "Tarjeta"
+        if r["Forma Pago"] == "Tarjeta"
         else 0,
         axis=1
     )
@@ -480,7 +487,7 @@ def guardar_ventas(nuevas):
     )
 
     # -----------------------------
-    # LIMPIEZA JSON (CLAVE)
+    # LIMPIEZA JSON (CRÍTICA)
     # -----------------------------
     df_nuevo = (
         df_nuevo
@@ -498,7 +505,6 @@ def guardar_ventas(nuevas):
     )
 
     return api_write(R2_VENTAS, df_final)
-
 
 #============================================================================================================================
 
