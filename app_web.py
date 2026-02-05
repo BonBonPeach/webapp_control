@@ -1216,18 +1216,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 cantidad = item["Cantidad"]
                 precio_unitario = item["Precio Unitario Final"]
                 descuento_porc = item["Descuento %"]
-            
-                # ========================
-                # VENTA BASE
-                # ========================
-                total_bruto = precio_unitario * cantidad
-                descuento_monto = total_bruto * (descuento_porc / 100)
-                subtotal = total_bruto - descuento_monto
-            
-                forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
-                comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
-                total_neto = subtotal - comision
-            
+                      
                 # ========================
                 # COSTO PRODUCTO BASE
                 # ========================
@@ -1246,19 +1235,31 @@ def mostrar_ventas(f_inicio, f_fin):
                 # Ajustar por cantidad vendida
                 total_precio_mods *= cantidad
                 total_costo_mods *= cantidad
-            
+                
                 # ========================
                 # TOTALES FINALES
                 # ========================
                 costo_total = costo_producto_total + total_costo_mods
                 ganancia_neta = total_neto - costo_total
+                
+                # ========================
+                # VENTA BASE
+                # ========================
+                total_bruto = precio_unitario * cantidad + total_precio_mods
+                descuento_monto = total_bruto * (descuento_porc / 100)
+                subtotal = total_bruto - descuento_monto
+            
+                forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
+                comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
+                total_neto = subtotal - comision
+                
             
                 ventas_detalladas.append({
                     "Fecha": fecha_guardado,
                     "Producto": producto,
                     "Cantidad": cantidad,
                     "Precio Unitario": precio_unitario,
-                    "Total Venta Bruto": total_bruto + total_precio_mods,
+                    "Total Venta Bruto": total_bruto,
                     "Descuento (%)": descuento_porc,
                     "Descuento ($)": descuento_monto,
                     "Costo Total": costo_total,
@@ -1276,9 +1277,6 @@ def mostrar_ventas(f_inicio, f_fin):
                 st.rerun()
             else:
                 st.error("No se pudo guardar la venta ❌")
-
-            
-
 
     # =========================================================
     # 2. SECCIÓN INFERIOR: HISTORIAL Y GRÁFICAS (ABAJO)
