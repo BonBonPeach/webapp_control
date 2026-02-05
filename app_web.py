@@ -345,12 +345,26 @@ def guardar_inventario(inventario_data):
 # ===============================
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
-    if df.empty or "Fecha" not in df.columns:
+    if df.empty:
         return []
 
-    # --- Fecha única, limpia y sin formato forzado ---
-    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.normalize()
-    df = df.dropna(subset=["Fecha_DT"])
+    # --- Resolver columna de fecha (compatibilidad total) ---
+    if "Fecha" in df.columns:
+        df["Fecha_DT"] = pd.to_datetime(
+            df["Fecha"],
+            errors="coerce",
+            dayfirst=True  # 👈 CLAVE para dd/mm/yyyy
+        )
+    elif "Fecha Venta" in df.columns:
+        df["Fecha_DT"] = pd.to_datetime(df["Fecha Venta"], errors="coerce")
+    else:
+        return []
+
+    # NO eliminar aún, primero inspeccionamos
+    df = df[df["Fecha_DT"].notna()].copy()
+
+    # Normalizar hora
+    df["Fecha_DT"] = df["Fecha_DT"].dt.normalize()
 
     # --- Filtro por rango ---
     if f_ini and f_fin:
