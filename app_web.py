@@ -9,6 +9,7 @@ import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import math
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 API_KEY=st.secrets["API_KEY"].strip()
@@ -420,7 +421,7 @@ def guardar_ventas(nuevas, fecha_venta=None):
 
     df_nuevo["Fecha"] = fecha_venta
 
-    # --- COLUMNAS BASE (evita NaN por columnas inexistentes) ---
+    # --- COLUMNAS BASE ---
     columnas_base = [
         "Cantidad",
         "Precio Unitario",
@@ -433,17 +434,13 @@ def guardar_ventas(nuevas, fecha_venta=None):
         if col not in df_nuevo.columns:
             df_nuevo[col] = 0
 
-    # --- TIPOS NUMÉRICOS ---
+    # --- NUMÉRICOS ---
     for col in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
         df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce")
 
     # --- CÁLCULOS ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
-
-    df_nuevo["Descuento ($)"] = (
-        df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
-    )
-
+    df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
     df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
 
     df_nuevo["Comision ($)"] = np.where(
@@ -457,12 +454,18 @@ def guardar_ventas(nuevas, fecha_venta=None):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- LIMPIEZA FINAL (CRÍTICA PARA JSON) ---
-    df_nuevo = (
-        df_nuevo
-        .replace([np.inf, -np.inf], 0)
-        .fillna(0)
-    )
+    # ------------------------------------------------------------------
+    # 🔥 LIMPIEZA DEFINITIVA JSON-SAFE (ESTA ES LA CLAVE)
+    # ------------------------------------------------------------------
+
+    def limpiar_valor(v):
+        if v is None:
+            return 0
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return 0
+        return v
+
+    df_nuevo = df_nuevo.applymap(limpiar_valor)
 
     # --- UNIR HISTÓRICO ---
     if not df_actual.empty:
@@ -470,8 +473,10 @@ def guardar_ventas(nuevas, fecha_venta=None):
     else:
         df_final = df_nuevo
 
-    return api_write(R2_VENTAS, df_final)
+    # 🔍 DEBUG opcional (puedes comentar luego)
+    # st.write("NaN restantes:", df_final.isna().sum())
 
+    return api_write(R2_VENTAS, df_final)
 
 #============================================================================================================================
 
