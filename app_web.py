@@ -1143,9 +1143,13 @@ def mostrar_ventas(f_inicio, f_fin):
         st.metric("Total a Cobrar", f"${total_carrito:.2f}")
         if st.button("✅ FINALIZAR Y REGISTRAR VENTA", type="primary", use_container_width=True):
 
+            recetas = leer_recetas()
+            precios = leer_precios_desglose()
             desglose_precios = leer_precios_desglose()
+            modificadores = leer_modificadores()
+
             ventas_detalladas = []
-            fecha_guardado = pd.to_datetime(fecha_venta)
+            fecha_guardado = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
             
             for item in st.session_state.carrito:
                 producto = item["Producto"]
@@ -1168,7 +1172,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 ganancia_neta = total_neto - costo_total
             
                 ventas_detalladas.append({
-                    "Fecha": fecha_guardado.strftime("%d/%m/%Y"),
+                    "Fecha": fecha_guardado,
                     "Producto": producto,
                     "Cantidad": cantidad,
                     "Precio Unitario": precio_unitario,
