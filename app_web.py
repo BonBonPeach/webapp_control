@@ -348,48 +348,40 @@ def leer_ventas(f_ini=None, f_fin=None):
     if df.empty:
         return []
 
-    # --- Resolver columna de fecha (compatibilidad total) ---
+    # --- Fecha ---
     if "Fecha" in df.columns:
         df["Fecha_DT"] = pd.to_datetime(
             df["Fecha"],
             errors="coerce",
-            dayfirst=True  # 👈 CLAVE para dd/mm/yyyy
+            dayfirst=True
         )
     elif "Fecha Venta" in df.columns:
         df["Fecha_DT"] = pd.to_datetime(df["Fecha Venta"], errors="coerce")
     else:
         return []
 
-    # NO eliminar aún, primero inspeccionamos
     df = df[df["Fecha_DT"].notna()].copy()
-
-    # Normalizar hora
     df["Fecha_DT"] = df["Fecha_DT"].dt.normalize()
 
-    # --- Filtro por rango ---
     if f_ini and f_fin:
         df = df[
             (df["Fecha_DT"].dt.date >= f_ini) &
             (df["Fecha_DT"].dt.date <= f_fin)
         ]
 
-    # --- Columnas numéricas ---
+    # --- Numéricos (SIN recalcular ventas) ---
     cols_num = [
         "Total Venta Bruto", "Descuento ($)", "Ganancia Bruta",
-        "Ganancia Neta", "Costo Total", "Precio Unitario", "Cantidad"
+        "Ganancia Neta", "Costo Total", "Precio Unitario", "Cantidad",
+        "Total Venta Neta"
     ]
     for col in cols_num:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # --- Total Venta Neta ---
+    # 🚨 SOLO si NO EXISTE la columna
     if "Total Venta Neta" not in df.columns:
         df["Total Venta Neta"] = df["Total Venta Bruto"] - df.get("Descuento ($)", 0)
-    else:
-        df["Total Venta Neta"] = (
-            pd.to_numeric(df["Total Venta Neta"], errors="coerce")
-            .fillna(df["Total Venta Bruto"] - df.get("Descuento ($)", 0))
-        )
 
     return df.to_dict("records")
 
