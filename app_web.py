@@ -1144,37 +1144,31 @@ def mostrar_ventas(f_inicio, f_fin):
         if st.button("✅ FINALIZAR Y REGISTRAR VENTA", type="primary", use_container_width=True):
 
             ventas_detalladas = []
-        
+
+            fecha_guardado = pd.to_datetime(fecha_venta)
+            
             for item in st.session_state.carrito:
                 producto = item["Producto"]
                 cantidad = item["Cantidad"]
+                precio_unitario = item["Precio Unitario Final"]
                 descuento_porc = item["Descuento %"]
-                forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
-        
-                datos_prod = precios.get(producto, {})
-                precio_base = datos_prod.get("precio_venta", 0)
-                costo_base = datos_prod.get("costo_produccion", 0)
-        
-                # --- MODIFICADORES ---
-                precio_mods, costo_mods = calcular_modificadores_totales(
-                    item.get("Modificadores", [])
-                )
-        
-                precio_unitario = precio_base + precio_mods
-                costo_unitario = costo_base + costo_mods
-        
+            
                 total_bruto = precio_unitario * cantidad
                 descuento_monto = total_bruto * (descuento_porc / 100)
                 subtotal = total_bruto - descuento_monto
-        
-                comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
+            
+                forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
+                comision = subtotal * (COMISION_TARJETA / 100) if item["Es Tarjeta"] else 0
+            
                 total_neto = subtotal - comision
-        
-                costo_total = costo_unitario * cantidad
+            
+                datos_prod = desglose_precios.get(producto, {})
+                costo_total = datos_prod.get("costo_produccion", 0) * cantidad
+            
                 ganancia_neta = total_neto - costo_total
-        
+            
                 ventas_detalladas.append({
-                    "Fecha": item["Fecha Venta"].strftime("%d/%m/%Y"),
+                    "Fecha": fecha_guardado.strftime("%d/%m/%Y"),
                     "Producto": producto,
                     "Cantidad": cantidad,
                     "Precio Unitario": precio_unitario,
