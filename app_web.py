@@ -8,6 +8,7 @@ import re
 import datetime
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 
 WORKER_URL = "https://admin.bonbon-peach.com/api"
 API_KEY=st.secrets["API_KEY"].strip()
@@ -404,40 +405,51 @@ def leer_ventas(f_ini=None, f_fin=None):
 
     return df.to_dict("records")
 
-def guardar_ventas(nuevas):
-    if not nuevas or not isinstance(nuevas, list):
-        return False
-
+def guardar_ventas(nuevas, fecha_venta=None):
+    df_actual = api_read(R2_VENTAS)
     df_nuevo = pd.DataFrame(nuevas)
+
     if df_nuevo.empty:
         return False
 
-    # --- Fecha (usar la del POS si viene, si no hoy) ---
-    if "Fecha" not in df_nuevo.columns:
-        df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
+    # --- FECHA ---
+    if fecha_venta is None:
+        fecha_venta = pd.Timestamp.today().strftime("%d/%m/%Y")
     else:
-        df_nuevo["Fecha"] = df_nuevo["Fecha"].astype(str)
+        fecha_venta = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
 
-    # --- Columnas numéricas ---
-    cols_num = [
-        "Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"
+    df_nuevo["Fecha"] = fecha_venta
+
+    # --- COLUMNAS BASE (evita NaN por columnas inexistentes) ---
+    columnas_base = [
+        "Cantidad",
+        "Precio Unitario",
+        "Descuento (%)",
+        "Costo Total",
+        "Forma Pago"
     ]
-    for col in cols_num:
-        if col in df_nuevo.columns:
-            df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce").fillna(0)
 
-    if "Forma Pago" not in df_nuevo.columns:
-        df_nuevo["Forma Pago"] = "Efectivo"
+    for col in columnas_base:
+        if col not in df_nuevo.columns:
+            df_nuevo[col] = 0
 
-    # --- Cálculos EXACTOS como escritorio ---
+    # --- TIPOS NUMÉRICOS ---
+    for col in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
+        df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce")
+
+    # --- CÁLCULOS ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
-    df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
+
+    df_nuevo["Descuento ($)"] = (
+        df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
+    )
+
     df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
 
-    df_nuevo["Comision ($)"] = df_nuevo.apply(
-        lambda r: r["Subtotal"] * (COMISION_TARJETA / 100)
-        if r["Forma Pago"] == "Tarjeta" else 0,
-        axis=1
+    df_nuevo["Comision ($)"] = np.where(
+        df_nuevo["Forma Pago"] == "Tarjeta",
+        df_nuevo["Subtotal"] * (COMISION_TARJETA / 100),
+        0
     )
 
     df_nuevo["Total Venta Neta"] = df_nuevo["Subtotal"] - df_nuevo["Comision ($)"]
@@ -445,19 +457,21 @@ def guardar_ventas(nuevas):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- Limpieza JSON-safe ---
-    df_nuevo = df_nuevo.fillna(0)
-
-    # --- Leer histórico ---
-    df_actual = api_read(R2_VENTAS)
-
-    df_final = (
-        pd.concat([df_actual, df_nuevo], ignore_index=True)
-        if not df_actual.empty else df_nuevo
+    # --- LIMPIEZA FINAL (CRÍTICA PARA JSON) ---
+    df_nuevo = (
+        df_nuevo
+        .replace([np.inf, -np.inf], 0)
+        .fillna(0)
     )
 
-    # 👉 api_write ya sabe manejar DataFrame
+    # --- UNIR HISTÓRICO ---
+    if not df_actual.empty:
+        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
+    else:
+        df_final = df_nuevo
+
     return api_write(R2_VENTAS, df_final)
+
 
 #============================================================================================================================
 
