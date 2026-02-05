@@ -1211,8 +1211,9 @@ def mostrar_ventas(f_inicio, f_fin):
                 # ========================
                 # COSTO PRODUCTO BASE
                 # ========================
-                datos_prod = desglose_precios.get(producto, {})
-                costo_unitario = clean_and_convert_float(datos_prod.get("costo_total", 0))
+                
+                datos_receta = recetas.get(producto, {})
+                costo_unitario = clean_and_convert_float(datos_receta.get("costo_total", 0))
                 costo_producto_total = costo_unitario * cantidad
             
                 # ========================
