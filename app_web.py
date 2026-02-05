@@ -407,7 +407,7 @@ def leer_ventas(f_ini=None, f_fin=None):
 
     return df.to_dict("records")
 
-def guardar_ventas(nuevas, fecha_venta):
+def guardar_ventas(nuevas):
     df_actual = api_read(R2_VENTAS)
     df_nuevo = pd.DataFrame(nuevas)
 
@@ -415,9 +415,15 @@ def guardar_ventas(nuevas, fecha_venta):
         return False
 
     # -----------------------------
-    # FECHA (usar la ya definida arriba)
+    # FECHA (compatibilidad total)
     # -----------------------------
-    df_nuevo["Fecha"] = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+    if "Fecha" not in df_nuevo.columns:
+        df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
+    else:
+        df_nuevo["Fecha"] = (
+            pd.to_datetime(df_nuevo["Fecha"], errors="coerce")
+            .dt.strftime("%d/%m/%Y")
+        )
 
     # -----------------------------
     # NUMÉRICOS
@@ -438,7 +444,7 @@ def guardar_ventas(nuevas, fecha_venta):
         )
 
     # -----------------------------
-    # CÁLCULOS EXACTOS (como escritorio)
+    # CÁLCULOS (idénticos al histórico)
     # -----------------------------
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
 
@@ -447,20 +453,19 @@ def guardar_ventas(nuevas, fecha_venta):
         * (df_nuevo["Descuento (%)"] / 100)
     )
 
-    df_nuevo["Subtotal"] = (
-        df_nuevo["Total Venta Bruto"]
-        - df_nuevo["Descuento ($)"]
-    )
-
     df_nuevo["Comision ($)"] = df_nuevo.apply(
-        lambda r: r["Subtotal"] * (COMISION_TARJETA / 100)
+        lambda r: (
+            (r["Total Venta Bruto"] - r["Descuento ($)"])
+            * (COMISION_TARJETA / 100)
+        )
         if r.get("Forma Pago") == "Tarjeta"
         else 0,
         axis=1
     )
 
     df_nuevo["Total Venta Neta"] = (
-        df_nuevo["Subtotal"]
+        df_nuevo["Total Venta Bruto"]
+        - df_nuevo["Descuento ($)"]
         - df_nuevo["Comision ($)"]
     )
 
@@ -474,12 +479,13 @@ def guardar_ventas(nuevas, fecha_venta):
         - df_nuevo["Costo Total"]
     )
 
-    # Limpieza final (clave para evitar NaN en JSON)
+    # -----------------------------
+    # LIMPIEZA JSON (CLAVE)
+    # -----------------------------
     df_nuevo = (
         df_nuevo
         .replace([np.inf, -np.inf], 0)
         .fillna(0)
-        .drop(columns=["Subtotal"], errors="ignore")
     )
 
     # -----------------------------
@@ -492,6 +498,7 @@ def guardar_ventas(nuevas, fecha_venta):
     )
 
     return api_write(R2_VENTAS, df_final)
+
 
 #============================================================================================================================
 
