@@ -411,16 +411,25 @@ def guardar_ventas(nuevas):
     if df_nuevo.empty:
         return False
 
-    # --- Normalizar fecha ---
+    # --- Normalizar Fecha ---
     if "Fecha" not in df_nuevo.columns:
         df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
-        else:
-            df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
+    else:
+        df_nuevo["Fecha"] = pd.to_datetime(
+            df_nuevo["Fecha"],
+            errors="coerce",
+            dayfirst=True
+        ).dt.strftime("%d/%m/%Y")
 
-    # --- Tipos numéricos ---
-    for col in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
+    # --- Columnas numéricas ---
+    cols_num = ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]
+    for col in cols_num:
         if col in df_nuevo.columns:
             df_nuevo[col] = pd.to_numeric(df_nuevo[col], errors="coerce").fillna(0)
+
+    # Asegurar Forma Pago
+    if "Forma Pago" not in df_nuevo.columns:
+        df_nuevo["Forma Pago"] = "Efectivo"
 
     # --- Cálculos EXACTOS como escritorio ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
@@ -429,7 +438,7 @@ def guardar_ventas(nuevas):
 
     df_nuevo["Comision ($)"] = df_nuevo.apply(
         lambda r: r["Subtotal"] * (COMISION_TARJETA / 100)
-        if r.get("Forma Pago") == "Tarjeta" else 0,
+        if r["Forma Pago"] == "Tarjeta" else 0,
         axis=1
     )
 
@@ -438,14 +447,15 @@ def guardar_ventas(nuevas):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- Unir histórico ---
-    df_final = df_nuevo if df_actual.empty else pd.concat(
-        [df_actual, df_nuevo],
-        ignore_index=True
-    )
+    # --- Unir con histórico ---
+    if df_actual.empty:
+        df_final = df_nuevo
+    else:
+        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
 
     api_write(R2_VENTAS, df_final)
     return True
+
 #============================================================================================================================
 
 def leer_precios_desglose():
