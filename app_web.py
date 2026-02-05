@@ -1182,7 +1182,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 })
         
                 # 🔁 Reposición (producto completo, no modificadores individuales)
-                descontar_recursivo(producto, cantidad)
+                #descontar_recursivo(producto, cantidad)
         
             ok = guardar_ventas(ventas_detalladas)
         
