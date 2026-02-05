@@ -154,9 +154,9 @@ def clean_and_convert_float(value_str, default=0.0):
 
 # --- GESTIÓN DE DATOS ---
 
-# ===============================
+# ============================================================================================================================
 # INGREDIENTES
-# ===============================
+# ============================================================================================================================
 def leer_ingredientes_base():
     df = api_read(R2_INGREDIENTES)
     ingredientes = []
@@ -183,9 +183,9 @@ def guardar_ingredientes_base(data):
     } for i in data])
     return api_write(R2_INGREDIENTES, df)
 
-# ===============================
+# ============================================================================================================================
 # RECETAS (Con soporte Sub-recetas y Modificadores Permitidos)
-# ===============================
+# ============================================================================================================================
 def leer_recetas():
     df = api_read(R2_RECETAS)
     recetas = {}
@@ -273,9 +273,9 @@ def guardar_recetas(recetas):
         
     return api_write(R2_RECETAS, pd.DataFrame(data))
 
-# ===============================
+# ============================================================================================================================
 # MODIFICADORES
-# ===============================
+# ============================================================================================================================
 def leer_modificadores():
     df = api_read(R2_MODIFICADORES)
     modificadores = {}
@@ -309,10 +309,27 @@ def guardar_modificadores(mods_dict):
                     "Ingrediente Base": ing, "Cantidad": cant
                 })
     return api_write(R2_MODIFICADORES, pd.DataFrame(data))
+    
+def calcular_modificadores_totales(lista_mods):
+    """
+    lista_mods = [
+        {"nombre": "...", "precio": 10, "cantidad": 2, "costo": 4},
+        ...
+    ]
+    """
+    total_precio = 0
+    total_costo = 0
 
-# ===============================
+    for m in lista_mods or []:
+        qty = m.get("cantidad", 0)
+        total_precio += m.get("precio", 0) * qty
+        total_costo += m.get("costo", 0) * qty
+
+    return total_precio, total_costo
+
+# ============================================================================================================================
 # INVENTARIO
-# ===============================
+# ============================================================================================================================
 def leer_inventario():
     inventario = {}
     try:
@@ -342,9 +359,9 @@ def guardar_inventario(inventario_data):
         return api_write(R2_INVENTARIO, pd.DataFrame(datos))
     except Exception as e: return False
 
-# ===============================
+# ============================================================================================================================
 # VENTAS
-# ===============================
+# ============================================================================================================================
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
     if df.empty:
@@ -433,7 +450,7 @@ def guardar_ventas(nuevas):
 
     api_write(R2_VENTAS, df_final)
     return True
-
+#============================================================================================================================
 
 def leer_precios_desglose():
     precios = {}
@@ -479,9 +496,9 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
             'Costo Reposición': costo_reposicion
         })
     return sorted(resultado, key=lambda x: x['Ingrediente'])
-
+#============================================================================================================================
 # --- PESTAÑAS Y VISTAS ---
-
+#============================================================================================================================
 def mostrar_dashboard(f_inicio, f_fin):
     st.markdown('<div class="section-header">📊 Dashboard General</div>', unsafe_allow_html=True)
     
@@ -1125,57 +1142,56 @@ def mostrar_ventas(f_inicio, f_fin):
         
         st.metric("Total a Cobrar", f"${total_carrito:.2f}")
         if st.button("✅ FINALIZAR Y REGISTRAR VENTA", type="primary", use_container_width=True):
-        
-            nuevas_ventas = []
-            fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+
+            ventas_detalladas = []
         
             for item in st.session_state.carrito:
                 producto = item["Producto"]
-                cantidad = float(item["Cantidad"])
-                descuento_porc = float(item["Descuento %"])
-                precio_unit = float(item["Precio Unitario Final"])
+                cantidad = item["Cantidad"]
+                descuento_porc = item["Descuento %"]
+                forma_pago = "Tarjeta" if item["Es Tarjeta"] else "Efectivo"
         
-                total_bruto = precio_unit * cantidad
-                descuento_monto = total_bruto * (descuento_porc / 100)
-                total_desp_desc = total_bruto - descuento_monto
+                datos_prod = precios.get(producto, {})
+                precio_base = datos_prod.get("precio_venta", 0)
+                costo_base = datos_prod.get("costo_produccion", 0)
         
-                comision = (
-                    total_desp_desc * (COMISION_TARJETA / 100)
-                    if item.get("Es Tarjeta") else 0
+                # --- MODIFICADORES ---
+                precio_mods, costo_mods = calcular_modificadores_totales(
+                    item.get("Modificadores", [])
                 )
         
-                total_neto = total_desp_desc - comision
+                precio_unitario = precio_base + precio_mods
+                costo_unitario = costo_base + costo_mods
         
-                costo_unit = leer_precios_desglose().get(producto, {}).get("costo_produccion", 0)
-                costo_total = costo_unit * cantidad
+                total_bruto = precio_unitario * cantidad
+                descuento_monto = total_bruto * (descuento_porc / 100)
+                subtotal = total_bruto - descuento_monto
         
-                ganancia_bruta = total_desp_desc - costo_total
+                comision = subtotal * (COMISION_TARJETA / 100) if forma_pago == "Tarjeta" else 0
+                total_neto = subtotal - comision
+        
+                costo_total = costo_unitario * cantidad
                 ganancia_neta = total_neto - costo_total
         
-                nuevas_ventas.append({
-                    "Fecha": fecha_str,
+                ventas_detalladas.append({
+                    "Fecha": item["Fecha Venta"].strftime("%d/%m/%Y"),
                     "Producto": producto,
                     "Cantidad": cantidad,
-                    "Precio Unitario": precio_unit,
+                    "Precio Unitario": precio_unitario,
                     "Total Venta Bruto": total_bruto,
                     "Descuento (%)": descuento_porc,
                     "Descuento ($)": descuento_monto,
                     "Costo Total": costo_total,
-                    "Ganancia Bruta": ganancia_bruta,
                     "Comision ($)": comision,
                     "Ganancia Neta": ganancia_neta,
-                    "Total Venta Neta": total_neto,
-                    "Forma Pago": "Tarjeta" if item.get("Es Tarjeta") else "Efectivo"
+                    "Forma Pago": forma_pago
                 })
         
-                # 🔻 Deducción de inventario (si aplica)
-                #descontar_recursivo(producto, cantidad)
+                # 🔁 Reposición (producto completo, no modificadores individuales)
+                descontar_recursivo(producto, cantidad)
         
-            guardar_ventas(nuevas_ventas)
-        
-            st.success(f"Venta registrada correctamente ({len(nuevas_ventas)} productos)")
             ok = guardar_ventas(ventas_detalladas)
-
+        
             if ok:
                 st.success("Venta registrada correctamente")
                 st.session_state.carrito = []
@@ -1183,9 +1199,6 @@ def mostrar_ventas(f_inicio, f_fin):
             else:
                 st.error("No se pudo guardar la venta")
 
-            st.session_state.carrito = []
-            st.rerun()
-        
 
     # =========================================================
     # 2. SECCIÓN INFERIOR: HISTORIAL Y GRÁFICAS (ABAJO)
