@@ -376,6 +376,14 @@ def leer_ventas(f_ini=None, f_fin=None):
     for col in cols_num:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    
+    # --- Compatibilidad con histórico antiguo (CSV / Escritorio) ---
+    if "Total Venta Neta" not in df.columns:
+        df["Total Venta Neta"] = (
+            df.get("Total Venta Bruto", 0)
+            - df.get("Descuento ($)", 0)
+            - df.get("Comision ($)", 0)
+        )
 
     return df.to_dict("records")
 
