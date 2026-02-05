@@ -412,7 +412,7 @@ def guardar_ventas(nuevas):
     if df_nuevo.empty:
         return False
 
-    # --- Fecha segura ---
+    # --- Fecha (usar la del POS si viene, si no hoy) ---
     if "Fecha" not in df_nuevo.columns:
         df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
     else:
@@ -420,8 +420,7 @@ def guardar_ventas(nuevas):
 
     # --- Columnas numéricas ---
     cols_num = [
-        "Cantidad", "Precio Unitario", "Descuento (%)",
-        "Costo Total"
+        "Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"
     ]
     for col in cols_num:
         if col in df_nuevo.columns:
@@ -430,7 +429,7 @@ def guardar_ventas(nuevas):
     if "Forma Pago" not in df_nuevo.columns:
         df_nuevo["Forma Pago"] = "Efectivo"
 
-    # --- Cálculos (idénticos a escritorio) ---
+    # --- Cálculos EXACTOS como escritorio ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
     df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
     df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
@@ -446,21 +445,19 @@ def guardar_ventas(nuevas):
 
     df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
 
-    # --- JSON SAFE ---
-    df_nuevo = df_nuevo.replace([np.inf, -np.inf], 0).fillna(0)
+    # --- Limpieza JSON-safe ---
+    df_nuevo = df_nuevo.fillna(0)
 
     # --- Leer histórico ---
     df_actual = api_read(R2_VENTAS)
-    if not df_actual.empty:
-        df_final = pd.concat([df_actual, df_nuevo], ignore_index=True)
-    else:
-        df_final = df_nuevo
 
-    # 🔴 CLAVE: convertir a list[dict]
-    registros = df_final.to_dict(orient="records")
+    df_final = (
+        pd.concat([df_actual, df_nuevo], ignore_index=True)
+        if not df_actual.empty else df_nuevo
+    )
 
-    return api_write(R2_VENTAS, registros)
-
+    # 👉 api_write ya sabe manejar DataFrame
+    return api_write(R2_VENTAS, df_final)
 
 #============================================================================================================================
 
