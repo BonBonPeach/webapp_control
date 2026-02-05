@@ -345,30 +345,66 @@ def guardar_inventario(inventario_data):
 # ===============================
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
-    if df.empty or "Fecha" not in df.columns: return []
-    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], format="%d/%m/%Y", errors="coerce")
+    if df.empty or "Fecha" not in df.columns:
+        return []
+
+    # --- Fecha única, limpia y sin formato forzado ---
+    df["Fecha_DT"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.normalize()
     df = df.dropna(subset=["Fecha_DT"])
+
+    # --- Filtro por rango ---
     if f_ini and f_fin:
-        df = df[(df["Fecha_DT"].dt.date >= f_ini) & (df["Fecha_DT"].dt.date <= f_fin)]
-    
-    cols_num = ["Total Venta Bruto", "Descuento ($)", "Ganancia Bruta", "Ganancia Neta", "Costo Total", "Precio Unitario", "Cantidad"]
+        df = df[
+            (df["Fecha_DT"].dt.date >= f_ini) &
+            (df["Fecha_DT"].dt.date <= f_fin)
+        ]
+
+    # --- Columnas numéricas ---
+    cols_num = [
+        "Total Venta Bruto", "Descuento ($)", "Ganancia Bruta",
+        "Ganancia Neta", "Costo Total", "Precio Unitario", "Cantidad"
+    ]
     for col in cols_num:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # --- Total Venta Neta ---
     if "Total Venta Neta" not in df.columns:
         df["Total Venta Neta"] = df["Total Venta Bruto"] - df.get("Descuento ($)", 0)
     else:
-        df["Total Venta Neta"] = pd.to_numeric(df["Total Venta Neta"], errors="coerce").fillna(df["Total Venta Bruto"] - df.get("Descuento ($)", 0))
+        df["Total Venta Neta"] = (
+            pd.to_numeric(df["Total Venta Neta"], errors="coerce")
+            .fillna(df["Total Venta Bruto"] - df.get("Descuento ($)", 0))
+        )
+
     return df.to_dict("records")
 
 def guardar_ventas(nuevas):
     df_actual = api_read(R2_VENTAS)
     df_nuevo = pd.DataFrame(nuevas).fillna(0)
+
+    # --- FECHA: obligatoria y normalizada ---
+    if "Fecha" not in df_nuevo.columns:
+        df_nuevo["Fecha"] = pd.Timestamp.today().normalize()
+    else:
+        df_nuevo["Fecha"] = pd.to_datetime(df_nuevo["Fecha"]).dt.normalize()
+
+    # --- Total Venta Neta ---
     if "Total Venta Neta" not in df_nuevo.columns:
-        df_nuevo["Total Venta Neta"] = df_nuevo.get("Total Venta Bruto", 0) - df_nuevo.get("Descuento ($)", 0)
-    
-    df = df_nuevo if df_actual.empty else pd.concat([df_actual, df_nuevo], ignore_index=True)
+        df_nuevo["Total Venta Neta"] = (
+            df_nuevo.get("Total Venta Bruto", 0)
+            - df_nuevo.get("Descuento ($)", 0)
+        )
+
+    # --- Concatenación segura ---
+    if not df_actual.empty:
+        df_actual["Fecha"] = pd.to_datetime(df_actual["Fecha"]).dt.normalize()
+        df = pd.concat([df_actual, df_nuevo], ignore_index=True)
+    else:
+        df = df_nuevo
+
     return api_write(R2_VENTAS, df)
+
 
 def leer_precios_desglose():
     precios = {}
@@ -962,7 +998,15 @@ def mostrar_ventas(f_inicio, f_fin):
     es_admin = st.session_state.get("rol") == "admin"
     
     if 'carrito' not in st.session_state: st.session_state.carrito = []
-
+    # --- Fecha de venta (solo admin) ---
+    if es_admin:
+        fecha_venta = st.date_input(
+            "📅 Fecha de la venta",
+            value=pd.Timestamp.today().date(),
+            help="Permite registrar ventas en una fecha distinta a hoy"
+        )
+    else:
+        fecha_venta = pd.Timestamp.today().date()
     # =========================================================
     # 1. SECCIÓN SUPERIOR: NUEVA ORDEN (POS)
     # =========================================================
@@ -1019,10 +1063,16 @@ def mostrar_ventas(f_inicio, f_fin):
                     costo_extra_total += (p_m * qty)
             
             st.session_state.carrito.append({
-                'Producto': prod_sel, 'Cantidad': cant_principal, 'Precio Base': p_base,
-                'Modificadores': lista_mods_final, 'Precio Unitario Final': p_base + costo_extra_total, 
-                'Descuento %': desc_porc, 'Es Tarjeta': pago_tarjeta
+                'Producto': prod_sel,
+                'Cantidad': cant_principal,
+                'Precio Base': p_base,
+                'Modificadores': lista_mods_final,
+                'Precio Unitario Final': p_base + costo_extra_total,
+                'Descuento %': desc_porc,
+                'Es Tarjeta': pago_tarjeta,
+                'Fecha': pd.to_datetime(fecha_venta)
             })
+
             for m_name in nombres_mods_validos: st.session_state[f"qty_mod_{m_name}"] = 0
             st.rerun()
 
