@@ -407,104 +407,88 @@ def leer_ventas(f_ini=None, f_fin=None):
 
     return df.to_dict("records")
 
-def guardar_ventas(nuevas):
+def guardar_ventas(nuevas, fecha_venta=None):
     df_actual = api_read(R2_VENTAS)
     df_nuevo = pd.DataFrame(nuevas)
 
     if df_nuevo.empty:
         return False
 
-    # -----------------------------
-    # FECHA (string JSON-safe)
-    # -----------------------------
-    if "Fecha" not in df_nuevo.columns:
-        df_nuevo["Fecha"] = pd.Timestamp.today().strftime("%d/%m/%Y")
+    # --- FECHA ---
+    if fecha_venta is None:
+        fecha_str = pd.Timestamp.today().strftime("%d/%m/%Y")
     else:
-        df_nuevo["Fecha"] = (
-            pd.to_datetime(df_nuevo["Fecha"], errors="coerce")
-            .dt.strftime("%d/%m/%Y")
-            .fillna(pd.Timestamp.today().strftime("%d/%m/%Y"))
-        )
+        fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
 
-    # -----------------------------
-    # FORMA PAGO (evitar None)
-    # -----------------------------
-    if "Forma Pago" not in df_nuevo.columns:
-        df_nuevo["Forma Pago"] = "Efectivo"
-    else:
-        df_nuevo["Forma Pago"] = df_nuevo["Forma Pago"].fillna("Efectivo")
+    df_nuevo["Fecha"] = fecha_str
 
-    # -----------------------------
-    # NUMÉRICOS
-    # -----------------------------
-    for col in [
-        "Cantidad",
-        "Precio Unitario",
-        "Descuento (%)",
-        "Costo Total"
-    ]:
-        if col not in df_nuevo.columns:
-            df_nuevo[col] = 0
+    # --- ASEGURAR COLUMNAS ---
+    columnas = [
+    "Fecha",
+    "Producto",
+    "Cantidad",
+    "Precio Unitario"0,
+    "Total Venta Bruto",
+    "Descuento ($)",
+    "Costo Total",
+    "Ganancia Bruta",
+    "Comision ($)",
+    "Ganancia Neta",
+    "Forma Pago",
+    "Total Venta Neta"
+    ]
 
-        df_nuevo[col] = pd.to_numeric(
-            df_nuevo[col], errors="coerce"
-        )
+    for c in columnas:
+        if c not in df_nuevo.columns:
+            df_nuevo[c] = 0
 
-    # -----------------------------
-    # CÁLCULOS (como histórico)
-    # -----------------------------
+    # --- NUMÉRICOS ---
+    for c in ["Cantidad", "Precio Unitario", "Descuento (%)", "Costo Total"]:
+        df_nuevo[c] = pd.to_numeric(df_nuevo[c], errors="coerce")
+
+    # --- CÁLCULOS (MISMA LÓGICA QUE ESCRITORIO) ---
     df_nuevo["Total Venta Bruto"] = df_nuevo["Precio Unitario"] * df_nuevo["Cantidad"]
+    df_nuevo["Descuento ($)"] = df_nuevo["Total Venta Bruto"] * (df_nuevo["Descuento (%)"] / 100)
+    df_nuevo["Subtotal"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Descuento ($)"]
 
-    df_nuevo["Descuento ($)"] = (
-        df_nuevo["Total Venta Bruto"]
-        * (df_nuevo["Descuento (%)"] / 100)
+    df_nuevo["Comision ($)"] = np.where(
+        df_nuevo["Forma Pago"] == "Tarjeta",
+        df_nuevo["Subtotal"] * (COMISION_TARJETA / 100),
+        0
     )
 
-    df_nuevo["Comision ($)"] = df_nuevo.apply(
-        lambda r: (
-            (r["Total Venta Bruto"] - r["Descuento ($)"])
-            * (COMISION_TARJETA / 100)
-        )
-        if r["Forma Pago"] == "Tarjeta"
-        else 0,
-        axis=1
+    df_nuevo["Total Venta Neta"] = df_nuevo["Subtotal"] - df_nuevo["Comision ($)"]
+
+    # 🔹 ESTA LÍNEA FALTABA
+    df_nuevo["Ganancia Bruta"] = df_nuevo["Total Venta Bruto"] - df_nuevo["Costo Total"]
+
+    df_nuevo["Ganancia Neta"] = df_nuevo["Total Venta Neta"] - df_nuevo["Costo Total"]
+
+    df_nuevo.drop(columns=["Subtotal"], inplace=True, errors="ignore")
+
+    # --- UNIR HISTÓRICO ---
+    df_final = df_nuevo if df_actual.empty else pd.concat(
+        [df_actual, df_nuevo],
+        ignore_index=True
     )
 
-    df_nuevo["Total Venta Neta"] = (
-        df_nuevo["Total Venta Bruto"]
-        - df_nuevo["Descuento ($)"]
-        - df_nuevo["Comision ($)"]
-    )
+    # --- LIMPIEZA JSON-SAFE (ESTA PARTE ES ORO) ---
+    registros = df_final.to_dict("records")
 
-    df_nuevo["Ganancia Bruta"] = (
-        df_nuevo["Total Venta Bruto"]
-        - df_nuevo["Costo Total"]
-    )
+    def limpiar_json(v):
+        if v is None:
+            return 0
+        if isinstance(v, float):
+            if math.isnan(v) or math.isinf(v):
+                return 0
+        return v
 
-    df_nuevo["Ganancia Neta"] = (
-        df_nuevo["Total Venta Neta"]
-        - df_nuevo["Costo Total"]
-    )
+    registros_limpios = [
+        {k: limpiar_json(v) for k, v in fila.items()}
+        for fila in registros
+    ]
 
-    # -----------------------------
-    # LIMPIEZA JSON (CRÍTICA)
-    # -----------------------------
-    df_nuevo = (
-        df_nuevo
-        .replace([np.inf, -np.inf], 0)
-        .fillna(0)
-    )
-
-    # -----------------------------
-    # UNIR HISTÓRICO
-    # -----------------------------
-    df_final = (
-        df_nuevo
-        if df_actual.empty
-        else pd.concat([df_actual, df_nuevo], ignore_index=True)
-    )
-
-    return api_write(R2_VENTAS, df_final)
+    return api_write(R2_VENTAS, registros_limpios)
 
 #============================================================================================================================
 
