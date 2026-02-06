@@ -554,52 +554,48 @@ def leer_precios_desglose():
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
     ventas = leer_ventas(fecha_inicio, fecha_fin)
-    if not ventas or not isinstance(ventas, list):
+    if not ventas:
         return []
+
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
-    modificadores = leer_modificadores()
+    mapa_costos = {i["nombre"]: i["costo_receta"] for i in ingredientes_base}
+
     ingredientes_utilizados = {}
 
     for venta in ventas:
-        producto = venta.get('Producto')
+        producto = venta.get("Producto", "")
         prod_limpio = producto.split(" (+")[0].strip()
-        cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
+        cantidad = clean_and_convert_float(venta.get("Cantidad", 0))
 
-        if prod_limpio in recetas:
-            desglose = descomponer_receta(
-                prod_limpio,
-                recetas,
-                factor=cantidad_vendida
-            )
-            for ing, cant in desglose.items():
-                ingredientes_utilizados[ing] = ingredientes_utilizados.get(ing, 0) + cant
-         # MODIFICADORES
-        for m in venta.get("Modificadores", []):
-            nombre_mod = m.get("nombre")
-            qty_mod = clean_and_convert_float(m.get("cantidad", 0))
+        if prod_limpio not in recetas or cantidad <= 0:
+            continue
 
-            if nombre_mod in modificadores:
-                for ing, cant in modificadores[nombre_mod]["ingredientes"].items():
-                    ingredientes_utilizados[ing] = (
-                        ingredientes_utilizados.get(ing, 0)
-                        + cant * qty_mod * cantidad_vendida
-                    )
+        desglose = descomponer_receta(prod_limpio, recetas, factor=cantidad)
+
+        for ing, cant in desglose.items():
+            ingredientes_utilizados[ing] = ingredientes_utilizados.get(ing, 0) + cant
+
     resultado = []
-    for ing_nom, cant_necesaria in ingredientes_utilizados.items():
-        info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
-        if not info or cant_necesaria <= 0:
+    for ing, cant in ingredientes_utilizados.items():
+        costo_unit = mapa_costos.get(ing, 0)
+        if cant <= 0 or costo_unit <= 0:
+            continue
+
+        info = next((i for i in ingredientes_base if i["nombre"] == ing), None)
+        if not info:
             continue
 
         resultado.append({
-            'Ingrediente': ing_nom,
-            'Cantidad Necesaria': cant_necesaria,
-            'Unidad': info['unidad_receta'],
-            'Proveedor': info['proveedor'],
-            'Costo Reposición': cant_necesaria * info['costo_receta']
+            "Ingrediente": ing,
+            "Cantidad Necesaria": cant,
+            "Unidad": info["unidad_receta"],
+            "Proveedor": info["proveedor"],
+            "Costo Reposición": cant * costo_unit
         })
 
-    return sorted(resultado, key=lambda x: x['Ingrediente'])
+    return sorted(resultado, key=lambda x: x["Ingrediente"])
+
 
 #============================================================================================================================
 # --- PESTAÑAS Y VISTAS ---
