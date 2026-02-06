@@ -355,8 +355,7 @@ def calcular_costo_modificador(nombre_mod, modificadores, ingredientes_base):
         costo += mapa_costos.get(ing, 0) * cant
 
     return costo
-    for ing, c in recetas[p]["ingredientes"].items():
-            val = mapa_costos.get(ing, 0) 
+
 # ============================================================================================================================
 # INVENTARIO
 # ============================================================================================================================
@@ -437,7 +436,8 @@ def leer_ventas(f_ini=None, f_fin=None):
         )
     else:
         df["Modificadores"] = [[] for _ in range(len(df))]
-        return df.to_dict("records")
+    
+    return df.to_dict("records")
 
 def guardar_ventas(nuevas, fecha_venta=None):
     df_actual = api_read(R2_VENTAS)
@@ -543,6 +543,8 @@ def leer_precios_desglose():
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
     ventas = leer_ventas(fecha_inicio, fecha_fin)
+    if not ventas or not isinstance(ventas, list):
+        return []
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
     modificadores = leer_modificadores()
@@ -1205,7 +1207,7 @@ def mostrar_ventas(f_inicio, f_fin):
                     costo_extra_total += p_m * qty
                     lista_mods_final.append({
                         "nombre": m_name,
-                        "precio": costo_extra_total,
+                        "precio": p_m,
                         "cantidad": qty,
                         "costo": costo_m
                     })
