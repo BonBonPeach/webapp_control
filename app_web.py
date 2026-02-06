@@ -320,7 +320,7 @@ def calcular_modificadores_totales(mods):
     for m in mods:
         qty = clean_and_convert_float(m.get("cantidad", 0))
         precio = clean_and_convert_float(m.get("precio", 0))
-        costo = clean_and_convert_float(m.get("costo", 0))
+        costo = clean_and_convert_float(m.get("costo_m", 0))
 
         total_precio += precio * qty
         total_costo += costo * qty
