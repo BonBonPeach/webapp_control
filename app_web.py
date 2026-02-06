@@ -333,13 +333,13 @@ def calcular_costo_modificador(nombre_mod, modificadores, ingredientes_base):
         return 0
 
     mapa_costos = {i["nombre"]: i["costo_receta"] for i in ingredientes_base}
-
     costo = 0
-    for ing, cant in mod.get("ingredientes", {}).items():
+    for ing, cant in mod.get("ingredientes",).items():
         costo += mapa_costos.get(ing, 0) * cant
 
     return costo
-    
+    for ing, c in recetas[p]["ingredientes"].items():
+            val = mapa_costos.get(ing, 0) 
 # ============================================================================================================================
 # INVENTARIO
 # ============================================================================================================================
