@@ -447,12 +447,12 @@ def guardar_ventas(nuevas, fecha_venta=None):
         return False
 
     # --- FECHA ---
-    if fecha_venta is None:
-        fecha_str = pd.Timestamp.today().strftime("%d/%m/%Y")
-    else:
-        fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
-
-    df_nuevo["Fecha"] = fecha_str
+    if "Fecha" not in df_nuevo.columns or df_nuevo["Fecha"].isna().all():
+        if fecha_venta is None:
+            fecha_str = pd.Timestamp.today().strftime("%d/%m/%Y")
+        else:
+            fecha_str = pd.to_datetime(fecha_venta).strftime("%d/%m/%Y")
+        df_nuevo["Fecha"] = fecha_str
 
     # --- ASEGURAR COLUMNAS ---
     columnas = [
@@ -1314,7 +1314,7 @@ def mostrar_ventas(f_inicio, f_fin):
                     "Total Venta Neta": total_neto
                 })
             
-            ok = guardar_ventas(ventas_detalladas)
+            ok = guardar_ventas(ventas_detalladas, fecha_venta)
             
             if ok:
                 st.success("Venta registrada correctamente ✅")
