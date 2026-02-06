@@ -284,24 +284,25 @@ def descomponer_receta(producto, recetas, factor=1, acumulado=None, visitados=No
         visitados = set()
 
     if producto in visitados:
-        return acumulado  # evita recursión infinita
+        return acumulado  # evita ciclos reales
 
     visitados.add(producto)
 
     receta = recetas.get(producto)
     if not receta:
         acumulado[producto] = acumulado.get(producto, 0) + factor
+        visitados.remove(producto)
         return acumulado
 
     for ing, cant in receta["ingredientes"].items():
         total = cant * factor
         if ing in recetas:
-            descomponer_receta(ing, recetas, total, acumulado, visitados.copy())
+            descomponer_receta(ing, recetas, total, acumulado, visitados)
         else:
             acumulado[ing] = acumulado.get(ing, 0) + total
 
+    visitados.remove(producto)
     return acumulado
-
 
 # ============================================================================================================================
 # MODIFICADORES
