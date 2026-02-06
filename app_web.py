@@ -275,6 +275,23 @@ def guardar_recetas(recetas):
         data.append(fila_mods)
         
     return api_write(R2_RECETAS, pd.DataFrame(data))
+    
+def descomponer_receta(nombre_receta, recetas, factor=1, acumulado=None):
+    if acumulado is None:
+        acumulado = {}
+
+    receta = recetas.get(nombre_receta)
+    if not receta:
+        return acumulado
+
+    for ing, cant in receta["ingredientes"].items():
+        total = cant * factor
+        if ing in recetas:
+            descomponer_receta(ing, recetas, total, acumulado)
+        else:
+            acumulado[ing] = acumulado.get(ing, 0) + total
+
+    return acumulado
 
 # ============================================================================================================================
 # MODIFICADORES
@@ -320,7 +337,7 @@ def calcular_modificadores_totales(mods):
     for m in mods:
         qty = clean_and_convert_float(m.get("cantidad", 0))
         precio = clean_and_convert_float(m.get("precio", 0))
-        costo = clean_and_convert_float(m.get("costo_m", 0))
+        costo = clean_and_convert_float(m.get("costo", 0))
 
         total_precio += precio * qty
         total_costo += costo * qty
@@ -526,26 +543,34 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
 
     for venta in ventas:
         producto = venta.get('Producto')
-        prod_limpio = producto.split(" (+")[0].strip() # Limpiar nombre ticket
-        
+        prod_limpio = producto.split(" (+")[0].strip()
         cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
+
         if prod_limpio in recetas:
-            for ing_nom, cant_receta in recetas[prod_limpio]['ingredientes'].items():
-                ingredientes_utilizados[ing_nom] = ingredientes_utilizados.get(ing_nom, 0) + (cant_receta * cantidad_vendida)
+            desglose = descomponer_receta(
+                prod_limpio,
+                recetas,
+                factor=cantidad_vendida
+            )
+            for ing, cant in desglose.items():
+                ingredientes_utilizados[ing] = ingredientes_utilizados.get(ing, 0) + cant
 
     resultado = []
     for ing_nom, cant_necesaria in ingredientes_utilizados.items():
-        if cant_necesaria <= 0: continue
         info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
-        if not info: continue
-        
-        costo_reposicion = cant_necesaria * info['costo_receta']
+        if not info or cant_necesaria <= 0:
+            continue
+
         resultado.append({
-            'Ingrediente': ing_nom, 'Cantidad Necesaria': cant_necesaria,
-            'Unidad': info['unidad_receta'], 'Proveedor': info['proveedor'],
-            'Costo Reposición': costo_reposicion
+            'Ingrediente': ing_nom,
+            'Cantidad Necesaria': cant_necesaria,
+            'Unidad': info['unidad_receta'],
+            'Proveedor': info['proveedor'],
+            'Costo Reposición': cant_necesaria * info['costo_receta']
         })
+
     return sorted(resultado, key=lambda x: x['Ingrediente'])
+
 #============================================================================================================================
 # --- PESTAÑAS Y VISTAS ---
 #============================================================================================================================
@@ -1160,10 +1185,10 @@ def mostrar_ventas(f_inicio, f_fin):
                         modificadores,
                         leer_ingredientes_base()
                     )
-                    costo_extra_total = p_m
+                    costo_extra_total += p_m * qty
                     lista_mods_final.append({
                         "nombre": m_name,
-                        "precio": p_m,
+                        "precio": costo_extra_total,
                         "cantidad": qty,
                         "costo": costo_m
                     })
