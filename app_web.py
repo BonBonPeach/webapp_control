@@ -304,6 +304,34 @@ def descomponer_receta(producto, recetas, factor=1, acumulado=None, visitados=No
     visitados.remove(producto)
     return acumulado
 
+def descomponer_receta_unitaria(producto, recetas, acumulado=None, stack=None):
+    if acumulado is None:
+        acumulado = {}
+
+    if stack is None:
+        stack = set()
+
+    if producto in stack:
+        return acumulado  # evita ciclos
+
+    receta = recetas.get(producto)
+    if not receta:
+        acumulado[producto] = acumulado.get(producto, 0) + 1
+        return acumulado
+
+    stack.add(producto)
+
+    for ing, cant in receta["ingredientes"].items():
+        if ing in recetas:
+            sub = descomponer_receta_unitaria(ing, recetas, {}, stack)
+            for sub_ing, sub_cant in sub.items():
+                acumulado[sub_ing] = acumulado.get(sub_ing, 0) + sub_cant * cant
+        else:
+            acumulado[ing] = acumulado.get(ing, 0) + cant
+
+    stack.remove(producto)
+    return acumulado
+
 # ============================================================================================================================
 # MODIFICADORES
 # ============================================================================================================================
@@ -554,48 +582,53 @@ def leer_precios_desglose():
 
 def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
     ventas = leer_ventas(fecha_inicio, fecha_fin)
-    if not ventas:
-        return []
-
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
-    mapa_costos = {i["nombre"]: i["costo_receta"] for i in ingredientes_base}
 
     ingredientes_utilizados = {}
 
     for venta in ventas:
-        producto = venta.get("Producto", "")
-        prod_limpio = producto.split(" (+")[0].strip()
-        cantidad = clean_and_convert_float(venta.get("Cantidad", 0))
+        producto = venta.get('Producto')
+        cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
 
-        if prod_limpio not in recetas or cantidad <= 0:
+        if producto not in recetas or cantidad_vendida <= 0:
             continue
 
-        desglose = descomponer_receta(prod_limpio, recetas, factor=cantidad)
+        # 🔹 descomposición UNITARIA
+        desglose_unitario = descomponer_receta_unitaria(producto, recetas)
 
-        for ing, cant in desglose.items():
-            ingredientes_utilizados[ing] = ingredientes_utilizados.get(ing, 0) + cant
+        # 🔹 aquí ocurre la multiplicación (UNA SOLA VEZ)
+        for ing_nom, cant_unitaria in desglose_unitario.items():
+            total_ing = cant_unitaria * cantidad_vendida
+            ingredientes_utilizados[ing_nom] = (
+                ingredientes_utilizados.get(ing_nom, 0) + total_ing
+            )
 
     resultado = []
-    for ing, cant in ingredientes_utilizados.items():
-        costo_unit = mapa_costos.get(ing, 0)
-        if cant <= 0 or costo_unit <= 0:
+
+    for ing_nom, cant_necesaria in ingredientes_utilizados.items():
+        if cant_necesaria <= 0:
             continue
 
-        info = next((i for i in ingredientes_base if i["nombre"] == ing), None)
+        info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
         if not info:
             continue
 
+        cant_compra = info['cantidad_compra']
+        porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
+        costo_reposicion = cant_necesaria * info['costo_receta']
+
         resultado.append({
-            "Ingrediente": ing,
-            "Cantidad Necesaria": cant,
-            "Unidad": info["unidad_receta"],
-            "Proveedor": info["proveedor"],
-            "Costo Reposición": cant * costo_unit
+            'Ingrediente': ing_nom,
+            'Cantidad Necesaria': cant_necesaria,
+            'Unidad': info['unidad_receta'],
+            'Costo Compra Base': info['costo_compra'],
+            'Proveedor': info['proveedor'],
+            '% Unidad Compra': porcentaje,
+            'Costo Reposición': costo_reposicion
         })
 
-    return sorted(resultado, key=lambda x: x["Ingrediente"])
-
+    return sorted(resultado, key=lambda x: x['Ingrediente'])
 
 #============================================================================================================================
 # --- PESTAÑAS Y VISTAS ---
