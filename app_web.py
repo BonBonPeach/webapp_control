@@ -276,22 +276,32 @@ def guardar_recetas(recetas):
         
     return api_write(R2_RECETAS, pd.DataFrame(data))
     
-def descomponer_receta(nombre_receta, recetas, factor=1, acumulado=None):
+def descomponer_receta(producto, recetas, factor=1, acumulado=None, visitados=None):
     if acumulado is None:
         acumulado = {}
 
-    receta = recetas.get(nombre_receta)
+    if visitados is None:
+        visitados = set()
+
+    if producto in visitados:
+        return acumulado  # evita recursión infinita
+
+    visitados.add(producto)
+
+    receta = recetas.get(producto)
     if not receta:
+        acumulado[producto] = acumulado.get(producto, 0) + factor
         return acumulado
 
     for ing, cant in receta["ingredientes"].items():
         total = cant * factor
         if ing in recetas:
-            descomponer_receta(ing, recetas, total, acumulado)
+            descomponer_receta(ing, recetas, total, acumulado, visitados)
         else:
             acumulado[ing] = acumulado.get(ing, 0) + total
 
     return acumulado
+
 
 # ============================================================================================================================
 # MODIFICADORES
