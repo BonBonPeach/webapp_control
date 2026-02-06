@@ -430,23 +430,16 @@ def guardar_inventario(inventario_data):
 # ============================================================================================================================
 # VENTAS
 # ============================================================================================================================
-def leer_ventas(f_ini=None, f_fin=None):
+ef leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
     if df.empty:
         return []
 
     # --- Fecha (compatibilidad total) ---
-    def parse_fecha_safe(x):
-        if isinstance(x, (datetime.date, datetime.datetime, pd.Timestamp)):
-            return pd.to_datetime(x)
-        return pd.to_datetime(str(x), dayfirst=True, errors="coerce")
-
     if "Fecha" in df.columns:
-        df["Fecha_DT"] = df["Fecha"].apply(parse_fecha_safe)
-
+        df["Fecha_DT"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
     elif "Fecha Venta" in df.columns:
-        df["Fecha_DT"] = df["Fecha Venta"].apply(parse_fecha_safe)
-
+        df["Fecha_DT"] = pd.to_datetime(df["Fecha Venta"], errors="coerce")
     else:
         return []
 
@@ -458,7 +451,6 @@ def leer_ventas(f_ini=None, f_fin=None):
             (df["Fecha_DT"].dt.date >= f_ini) &
             (df["Fecha_DT"].dt.date <= f_fin)
         ]
-
     # --- Tipos numéricos (SIN recalcular) ---
     cols_num = [
         "Cantidad", "Precio Unitario", "Total Venta Bruto",
@@ -598,18 +590,12 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
         producto = venta.get('Producto')
         cantidad_vendida = clean_and_convert_float(venta.get('Cantidad', 0))
 
-        if producto not in recetas or cantidad_vendida <= 0:
-            continue
-
-        # 🔹 descomposición UNITARIA
-        desglose_unitario = descomponer_receta_unitaria(producto, recetas)
-
-        # 🔹 aquí ocurre la multiplicación (UNA SOLA VEZ)
-        for ing_nom, cant_unitaria in desglose_unitario.items():
-            total_ing = cant_unitaria * cantidad_vendida
-            ingredientes_utilizados[ing_nom] = (
-                ingredientes_utilizados.get(ing_nom, 0) + total_ing
-            )
+        if producto in recetas:
+            for ing_nom, cant_receta in recetas[producto]['ingredientes'].items():
+                total_ing = cant_receta * cantidad_vendida
+                ingredientes_utilizados[ing_nom] = (
+                    ingredientes_utilizados.get(ing_nom, 0) + total_ing
+                )
 
     resultado = []
 
@@ -623,10 +609,7 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
 
         cant_compra = info['cantidad_compra']
         porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
-        costo_reposicion = (
-            cant_necesaria / info['cantidad_compra']
-        ) * info['costo_compra']
-
+        costo_reposicion = cant_necesaria * info['costo_receta']
 
         resultado.append({
             'Ingrediente': ing_nom,
