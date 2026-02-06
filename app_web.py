@@ -437,7 +437,13 @@ def leer_ventas(f_ini=None, f_fin=None):
 
     # --- Fecha (compatibilidad total) ---
     if "Fecha" in df.columns:
-        df["Fecha_DT"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
+        def parse_fecha_safe(x):
+        if isinstance(x, (datetime.date, datetime.datetime, pd.Timestamp)):
+            return pd.to_datetime(x)
+        return pd.to_datetime(str(x), dayfirst=True, errors="coerce")
+    
+        df["Fecha_DT"] = df["Fecha"].apply(parse_fecha_safe)
+
     elif "Fecha Venta" in df.columns:
         df["Fecha_DT"] = pd.to_datetime(df["Fecha Venta"], errors="coerce")
     else:
