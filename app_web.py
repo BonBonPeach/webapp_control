@@ -436,16 +436,17 @@ def leer_ventas(f_ini=None, f_fin=None):
         return []
 
     # --- Fecha (compatibilidad total) ---
+    def parse_fecha_safe(x):
+        if isinstance(x, (datetime.date, datetime.datetime, pd.Timestamp)):
+            return pd.to_datetime(x)
+        return pd.to_datetime(str(x), dayfirst=True, errors="coerce")
+
     if "Fecha" in df.columns:
         df["Fecha_DT"] = df["Fecha"].apply(parse_fecha_safe)
 
     elif "Fecha Venta" in df.columns:
-        def parse_fecha_safe(x):
-            if isinstance(x, (datetime.date, datetime.datetime, pd.Timestamp)):
-                return pd.to_datetime(x)
-            return pd.to_datetime(str(x), dayfirst=True, errors="coerce")
-        
-        df["Fecha_DT"] = df["Fecha"].apply(parse_fecha_safe)
+        df["Fecha_DT"] = df["Fecha Venta"].apply(parse_fecha_safe)
+
     else:
         return []
 
@@ -622,7 +623,10 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
 
         cant_compra = info['cantidad_compra']
         porcentaje = (cant_necesaria / cant_compra * 100) if cant_compra > 0 else 0
-        costo_reposicion = cant_necesaria * info['costo_receta']
+        costo_reposicion = (
+            cant_necesaria / info['cantidad_compra']
+        ) * info['costo_compra']
+
 
         resultado.append({
             'Ingrediente': ing_nom,
