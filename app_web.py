@@ -431,8 +431,13 @@ def leer_ventas(f_ini=None, f_fin=None):
             - df.get("Descuento ($)", 0)
             - df.get("Comision ($)", 0)
         )
-
-    return df.to_dict("records")
+    if "Modificadores" in df.columns:
+        df["Modificadores"] = df["Modificadores"].apply(
+            lambda x: x if isinstance(x, list) else []
+        )
+    else:
+        df["Modificadores"] = [[] for _ in range(len(df))]
+        return df.to_dict("records")
 
 def guardar_ventas(nuevas, fecha_venta=None):
     df_actual = api_read(R2_VENTAS)
@@ -453,6 +458,7 @@ def guardar_ventas(nuevas, fecha_venta=None):
     columnas = [
     "Fecha",
     "Producto",
+    "Modificadores",
     "Cantidad",
     "Precio Unitario",
     "Total Venta Bruto",
@@ -539,6 +545,7 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
     ventas = leer_ventas(fecha_inicio, fecha_fin)
     recetas = leer_recetas()
     ingredientes_base = leer_ingredientes_base()
+    modificadores = leer_modificadores()
     ingredientes_utilizados = {}
 
     for venta in ventas:
@@ -554,7 +561,17 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
             )
             for ing, cant in desglose.items():
                 ingredientes_utilizados[ing] = ingredientes_utilizados.get(ing, 0) + cant
+         # MODIFICADORES
+        for m in venta.get("Modificadores", []):
+            nombre_mod = m.get("nombre")
+            qty_mod = clean_and_convert_float(m.get("cantidad", 0))
 
+            if nombre_mod in modificadores:
+                for ing, cant in modificadores[nombre_mod]["ingredientes"].items():
+                    ingredientes_utilizados[ing] = (
+                        ingredientes_utilizados.get(ing, 0)
+                        + cant * qty_mod * cantidad_vendida
+                    )
     resultado = []
     for ing_nom, cant_necesaria in ingredientes_utilizados.items():
         info = next((i for i in ingredientes_base if i['nombre'] == ing_nom), None)
@@ -1282,6 +1299,7 @@ def mostrar_ventas(f_inicio, f_fin):
                 ventas_detalladas.append({
                     "Fecha": fecha_guardado,
                     "Producto": producto,
+                    "Modificadores":item.get("Modificadores", []),
                     "Cantidad": cantidad,
                     "Precio Unitario": precio_unitario,
                     "Total Venta Bruto": total_bruto,
