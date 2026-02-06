@@ -582,7 +582,7 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
                 for ing, cant in modificadores[nombre_mod]["ingredientes"].items():
                     ingredientes_utilizados[ing] = (
                         ingredientes_utilizados.get(ing, 0)
-                        + cant * qty_mod
+                        + cant * qty_mod * cantidad_vendida
                     )
     resultado = []
     for ing_nom, cant_necesaria in ingredientes_utilizados.items():
