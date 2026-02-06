@@ -296,7 +296,7 @@ def descomponer_receta(producto, recetas, factor=1, acumulado=None, visitados=No
     for ing, cant in receta["ingredientes"].items():
         total = cant * factor
         if ing in recetas:
-            descomponer_receta(ing, recetas, total, acumulado, visitados)
+            descomponer_receta(ing, recetas, total, acumulado, visitados.copy())
         else:
             acumulado[ing] = acumulado.get(ing, 0) + total
 
@@ -582,7 +582,7 @@ def calcular_reposicion_sugerida(fecha_inicio, fecha_fin):
                 for ing, cant in modificadores[nombre_mod]["ingredientes"].items():
                     ingredientes_utilizados[ing] = (
                         ingredientes_utilizados.get(ing, 0)
-                        + cant * qty_mod * cantidad_vendida
+                        + cant * qty_mod
                     )
     resultado = []
     for ing_nom, cant_necesaria in ingredientes_utilizados.items():
