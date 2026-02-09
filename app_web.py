@@ -162,6 +162,8 @@ def clean_and_convert_float(value_str, default=0.0):
 # ============================================================================================================================
 def leer_ingredientes_base():
     df = api_read(R2_INGREDIENTES)
+    df.columns = df.columns.str.strip()
+
     ingredientes = []
     for _, r in df.iterrows():
         if not r.get("Ingrediente"): continue
