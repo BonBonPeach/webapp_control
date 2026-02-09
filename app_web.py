@@ -468,11 +468,15 @@ def leer_ventas(f_ini=None, f_fin=None):
     
     # --- Compatibilidad con histórico antiguo (CSV / Escritorio) ---
     if "Total Venta Neta" not in df.columns:
-        df["Total Venta Neta"] = (
-            df.get("Total Venta Bruto", 0)
-            - df.get("Descuento ($)", 0)
-            - df.get("Comision ($)", 0)
-        )
+        df["Total Venta Neta"] = 0
+    
+    mask_neta_invalida = df["Total Venta Neta"] <= 0
+    
+    df.loc[mask_neta_invalida, "Total Venta Neta"] = (
+        df.loc[mask_neta_invalida, "Total Venta Bruto"]
+        - df.loc[mask_neta_invalida, "Descuento ($)"]
+        - df.loc[mask_neta_invalida, "Comision ($)"]
+    )
     if "Modificadores" in df.columns:
         df["Modificadores"] = df["Modificadores"].apply(
             lambda x: x if isinstance(x, list) else []
