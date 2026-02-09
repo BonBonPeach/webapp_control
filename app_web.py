@@ -169,7 +169,12 @@ def leer_ingredientes_base():
             "nombre": r["Ingrediente"],
             "proveedor": r.get("Proveedor", ""),
             "unidad_compra": r.get("Unidad de Compra", ""),
-            "costo_compra": clean_and_convert_float(r.get("Costo de Compra")),
+            "costo_compra": (
+                clean_and_convert_float(r.get("Costo de Compra"))
+                if pd.notna(r.get("Costo de Compra"))
+                else None
+            ),
+
             "cantidad_compra": clean_and_convert_float(r.get("Cantidad por Unidad de Compra")),
             "unidad_receta": r.get("Unidad Receta", ""),
             "costo_receta": clean_and_convert_float(r.get("Costo por Unidad Receta")),
@@ -184,6 +189,9 @@ def guardar_ingredientes_base(data):
         "Cantidad por Unidad de Compra": i["cantidad_compra"],
         "Unidad Receta": i["unidad_receta"], "Costo por Unidad Receta": i["costo_receta"],
     } for i in data])
+    df["Costo de Compra"] = df["Costo de Compra"].apply(
+        lambda x: x if pd.notna(x) else None
+    )
     return api_write(R2_INGREDIENTES, df)
 
 # ============================================================================================================================
