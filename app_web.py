@@ -171,12 +171,7 @@ def leer_ingredientes_base():
             "nombre": r["Ingrediente"],
             "proveedor": r.get("Proveedor", ""),
             "unidad_compra": r.get("Unidad de Compra", ""),
-            "costo_compra": (
-                clean_and_convert_float(r.get("Costo de Compra"))
-                if pd.notna(r.get("Costo de Compra"))
-                else None
-            ),
-
+            "costo_compra": clean_and_convert_float(r.get("Costo de Compra")),
             "cantidad_compra": clean_and_convert_float(r.get("Cantidad por Unidad de Compra")),
             "unidad_receta": r.get("Unidad Receta", ""),
             "costo_receta": clean_and_convert_float(r.get("Costo por Unidad Receta")),
