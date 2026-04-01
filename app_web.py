@@ -110,12 +110,13 @@ st.markdown("""
 #_______________________________
 #          Funciones de API
 #_______________________________
+@st.cache_data(ttl=60)
 def api_read(endpoint):
     try:
         r = requests.get(
             f"{WORKER_URL}/{endpoint}",
             headers={"X-API-Key": API_KEY, "User-Agent": "Streamlit-App/1.0", "Accept": "application/json"},
-            timeout=10
+            timeout=30
         )
         r.raise_for_status()
         data = r.json()
@@ -132,7 +133,7 @@ def api_write(endpoint, data):
             f"{WORKER_URL}/{endpoint}",
             json=payload,
             headers={"X-API-Key": API_KEY, "User-Agent": "Streamlit-App/1.0", "Accept": "application/json", "Content-Type": "application/json"},
-            timeout=10
+            timeout=30
         )
         r.raise_for_status()
         st.cache_data.clear()
@@ -160,6 +161,7 @@ def clean_and_convert_float(value_str, default=0.0):
 # ============================================================================================================================
 # INGREDIENTES
 # ============================================================================================================================
+@st.cache_data(ttl=120)
 def leer_ingredientes_base():
     df = api_read(R2_INGREDIENTES)
     df.columns = df.columns.str.strip()
@@ -194,6 +196,7 @@ def guardar_ingredientes_base(data):
 # ============================================================================================================================
 # RECETAS (Con soporte Sub-recetas y Modificadores Permitidos)
 # ============================================================================================================================
+@st.cache_data(ttl=120)
 def leer_recetas():
     df = api_read(R2_RECETAS)
     recetas = {}
@@ -340,6 +343,7 @@ def descomponer_receta_unitaria(producto, recetas, acumulado=None, stack=None):
 # ============================================================================================================================
 # MODIFICADORES
 # ============================================================================================================================
+@st.cache_data(ttl=120)
 def leer_modificadores():
     df = api_read(R2_MODIFICADORES)
     modificadores = {}
@@ -435,6 +439,7 @@ def guardar_inventario(inventario_data):
 # ============================================================================================================================
 # VENTAS
 # ============================================================================================================================
+@st.cache_data(ttl=120)
 def leer_ventas(f_ini=None, f_fin=None):
     df = api_read(R2_VENTAS)
     if df.empty:
